@@ -1,0 +1,75 @@
+{
+  "consult_id": "CON-377633-5683",
+  "telegram_id": 1127335683,
+  "telegram_username": "Ehsanabavi89",
+  "telegram_fullname": "Ehsan Nabavi",
+  "telegram_language": "en",
+  "created_at": "2026-01-02 18:13:53",
+  "updated_at": "2026-01-02 18:16:20",
+  "submitted_at": "2026-01-02 18:16:20",
+  "status": "pending",
+  "priority": "medium",
+  "source": "telegram_bot",
+  "personal": {
+    "name": "Mohsen",
+    "age": 34,
+    "residence_country": "🇮🇷 ایران",
+    "residence_city": ""
+  },
+  "education": {
+    "current_level": "کارشناسی (لیسانس)",
+    "current_field": "علوم ورزشی",
+    "graduation_year": 2004,
+    "gpa": "14.35",
+    "gpa_scale": "از ۲۰",
+    "university_name": ""
+  },
+  "language": {
+    "has_certificate": true,
+    "certificate_type": "TOEFL iBT",
+    "certificate_score": "108",
+    "self_assessment_level": "🟢 بالای متوسط (B2)",
+    "italian_knowledge": ""
+  },
+  "study_plan": {
+    "target_degree": "هنر و طراحی",
+    "target_field": "هنر",
+    "target_universities": [
+      "فرقی نمی‌کند"
+    ],
+    "preferred_city": "",
+    "start_semester": "پاییز 2026",
+    "scholarship_interest": true
+  },
+  "financial": {
+    "monthly_budget_eur": 400,
+    "has_sponsor": false,
+    "needs_scholarship": true,
+    "can_work_parttime": true
+  },
+  "contact": {
+    "phone": "+989384545608",
+    "phone_verified": true,
+    "whatsapp": "",
+    "email": "",
+    "preferred_contact_method": "telegram",
+    "preferred_contact_time": ""
+  },
+  "documents": {
+    "resume_file_id": "AgACAgQAAxkBAAID6GlYC1uZhE59XoutTMUkrN7mUBPxAAJ1DGsbwCDBUo-M78N34g7kAQADAgADeQADOAQ",
+    "resume_file_name": "photo.jpg",
+    "additional_files": []
+  },
+  "notes": {
+    "user_notes": "نحوه پذیرش چجوریه",
+    "admin_notes": "",
+    "internal_tags": []
+  },
+  "tracking": {
+    "current_step": 14,
+    "completion_percentage": 100,
+    "last_activity": "2026-01-02 18:16:20",
+    "follow_ups": [],
+    "status_history": []
+  }
+}
