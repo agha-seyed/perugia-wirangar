@@ -237,7 +237,7 @@ def get_main_menu(lang: dict) -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton(text=t("translate", "🌐 ترجمه متن"), callback_data="ai:translate_menu"),
-            InlineKeyboardButton(text=t("feedback", "📝 بازخورد"), callback_data="ai:feedback_good"), # موقت به فیدبک AI وصل شده
+            InlineKeyboardButton(text=t("feedback", "📝 پشتیبانی"), callback_data="feedback"), # موقت به فیدبک AI وصل شده
         ],
         # ردیف ۶: تنظیمات
         [
@@ -406,4 +406,5 @@ __all__ = [
     "get_main_menu",
     "get_back_button",
     "SUPPORTED_LANGUAGES",
+
 ]
