@@ -1,5 +1,5 @@
 # main.py
-# فایل اصلی اجرای ربات - نسخه نهایی و اصلاح‌شده (هماهنگ با AI Handler v5.0)
+# فایل اصلی اجرای ربات - اصلاح شده برای رفع خطای Router و IP
 # ژانویه ۲۰۲۵
 
 import os
@@ -37,7 +37,7 @@ dp = Dispatcher(storage=MemoryStorage())
 def register_routers():
     """ثبت تمام روترها با مدیریت خطا"""
     
-    # لیست ماژول‌ها و نام روتر (نام دوم فعلا نمایشی است چون getattr روی 'router' تنظیم شده)
+    # لیست ماژول‌ها و نام روتر
     routers_config = [
         ("handlers.cmd_start", "start_router"),
         ("handlers.ai_handler", "ai_router"),
@@ -70,7 +70,7 @@ def register_routers():
     
     logger.info(f"📦 Routers registered: {registered}/{len(routers_config)}")
     
-    # تنظیم AI Service (اتصال بات به سرویس برای دسترسی‌های احتمالی)
+    # تنظیم AI Service
     try:
         from services.ai_service import ai_service
         ai_service.set_bot(bot)
@@ -79,8 +79,7 @@ def register_routers():
         logger.debug(f"   ⚠ AI Service: {e}")
 
 
-# ثبت روترها در همین لحظه اجرا می‌شود
-register_routers()
+# ❌ نکته مهم: خط اجرای مستقیم register_routers() از اینجا حذف شد
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -95,6 +94,9 @@ async def lifespan(app: FastAPI):
     logger.info("🚀 SmartStudentBot Starting...")
     logger.info("=" * 50)
     
+    # ✅ انتقال ثبت روترها به اینجا (فقط یک بار اجرا می‌شود)
+    register_routers()
+
     # ─────────────────────────────────────────────────────
     # Startup (شروع)
     # ─────────────────────────────────────────────────────
@@ -104,8 +106,7 @@ async def lifespan(app: FastAPI):
         bot_info = await bot.get_me()
         logger.success(f"🤖 Bot: @{bot_info.username}")
         
-        # 2. هوک راه‌اندازی هندلر هوش مصنوعی (اضافه شده ✅)
-        # این بخش تسک‌های پاکسازی پس‌زمینه را اجرا می‌کند
+        # 2. هوک راه‌اندازی هندلر هوش مصنوعی
         try:
             from handlers.ai_handler import on_startup as ai_startup
             await ai_startup()
@@ -148,22 +149,18 @@ async def lifespan(app: FastAPI):
     logger.info("🛑 Shutting down...")
     
     try:
-        # 1. هوک توقف هندلر هوش مصنوعی (اضافه شده ✅)
-        # این بخش تسک‌های پس‌زمینه را متوقف می‌کند
         try:
             from handlers.ai_handler import on_shutdown as ai_shutdown
             await ai_shutdown()
         except Exception as e:
             logger.error(f"Error stopping AI handler: {e}")
 
-        # 2. ذخیره آمار سرویس AI
         try:
             from services.ai_service import ai_service
             ai_service.save_stats()
         except:
             pass
         
-        # 3. بستن سشن ربات
         await bot.session.close()
         logger.info("👋 Goodbye!")
         
@@ -212,15 +209,21 @@ async def readiness_check():
 async def webhook_handler(request: Request):
     """Webhook endpoint"""
     
-    # بررسی IP در پروداکشن
+    # ✅ اصلاح شده: دریافت IP واقعی از پشت پروکسی Render
     if not settings.IS_LOCAL:
-        client_ip = request.client.host if request.client else ""
-        telegram_ips = ("149.154.", "91.108.", "185.76.")
+        forwarded_for = request.headers.get("x-forwarded-for")
+        if forwarded_for:
+            # اولین IP در لیست، IP واقعی کاربر/تلگرام است
+            client_ip = forwarded_for.split(",")[0].strip()
+        else:
+            client_ip = request.client.host if request.client else "unknown"
         
-        if not any(client_ip.startswith(ip) for ip in telegram_ips):
-            logger.warning(f"⚠️ Non-Telegram IP: {client_ip}")
-            # فقط لاگ - بلاک نمی‌کنیم (ممکنه پشت proxy باشیم)
-    
+        # لیست IPهای رنج تلگرام (اختیاری برای لاگ)
+        # telegram_ips = ("149.154.", "91.108.", "185.76.")
+        
+        # لاگ را تمیزتر کردیم که فقط در صورت نیاز نمایش دهد
+        # logger.info(f"📩 Incoming update from IP: {client_ip}")
+
     try:
         update = types.Update(**(await request.json()))
         await dp.feed_update(bot=bot, update=update)
@@ -231,33 +234,16 @@ async def webhook_handler(request: Request):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# اجرای Polling
-# ─────────────────────────────────────────────────────────────────────────────
-
-async def run_polling():
-    """اجرای Polling برای توسعه محلی"""
-    
-    async with lifespan(app):
-        await dp.start_polling(
-            bot,
-            allowed_updates=["message", "callback_query", "chat_member", "my_chat_member"],
-        )
-
-
-# ─────────────────────────────────────────────────────────────────────────────
 # نقطه ورود
 # ─────────────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    
     if settings.IS_LOCAL:
-        # Polling
         try:
             asyncio.run(run_polling())
         except KeyboardInterrupt:
             logger.info("👋 Stopped by user")
     else:
-        # Uvicorn
         import uvicorn
         uvicorn.run(
             "main:app",
