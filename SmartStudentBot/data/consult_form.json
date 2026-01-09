@@ -1,0 +1,106 @@
+[
+  {
+    "step": 1,
+    "key": "name",
+    "question": "نام کامل خود را وارد کنید:\n<i>مثال: احسان نبوی</i>",
+    "type": "text",
+    "validation": {"min_length": 3},
+    "next": 2
+  },
+  {
+    "step": 2,
+    "key": "age",
+    "question": "سن خود را وارد کنید:\n<i>مثال: ۲۳</i>",
+    "type": "number",
+    "validation": {"min": 16, "max": 80},
+    "next": 3
+  },
+  {
+    "step": 3,
+    "key": "nationality",
+    "question": "ملیت شما چیست؟\n<i>مثال: ایرانی</i>",
+    "type": "text",
+    "validation": {"min_length": 3},
+    "next": 4
+  },
+  {
+    "step": 4,
+    "key": "language_level",
+    "question": "سطح زبان ایتالیایی یا انگلیسی شما چقدر است؟",
+    "type": "choice",
+    "options": [
+      {"text": "مبتدی (A1-A2)", "value": "beginner"},
+      {"text": "متوسط (B1-B2)", "value": "intermediate"},
+      {"text": "پیشرفته (C1-C2)", "value": "advanced"},
+      {"text": "بدون دانش", "value": "none"}
+    ],
+    "next": 5
+  },
+  {
+    "step": 5,
+    "key": "study_goal",
+    "question": "هدف شما از تحصیل در ایتالیا چیست؟",
+    "type": "choice",
+    "options": [
+      {"text": "🎓 لیسانس", "value": "bachelor"},
+      {"text": "🎓 ارشد / دکتری", "value": "master_phd"},
+      {"text": "📚 دوره زبان", "value": "language"},
+      {"text": "⏳ کوتاه‌مدت / تبادل", "value": "short"}
+    ],
+    "next": 6
+  },
+  {
+    "step": 6,
+    "key": "budget",
+    "question": "بودجه ماهانه شما برای زندگی و اجاره چند یورو است؟\n<i>مثال: ۷۰۰</i>",
+    "type": "number",
+    "validation": {"min": 300, "max": 2000},
+    "next": 7
+  },
+  {
+    "step": 7,
+    "key": "accommodation",
+    "question": "ترجیح شما برای محل زندگی چیست؟",
+    "type": "choice",
+    "options": [
+      {"text": "🏠 خوابگاه دانشگاهی", "value": "dorm"},
+      {"text": "🏢 آپارتمان اجاره‌ای", "value": "apartment"},
+      {"text": "👥 با هم‌اتاقی", "value": "roommate"}
+    ],
+    "next": 8
+  },
+  {
+    "step": 8,
+    "key": "roommate_need",
+    "question": "آیا نیاز به کمک برای یافتن هم‌اتاقی دارید؟",
+    "type": "choice",
+    "options": [
+      {"text": "بله", "value": "yes"},
+      {"text": "خیر", "value": "no"}
+    ],
+    "next": 9
+  },
+  {
+    "step": 9,
+    "key": "field_university",
+    "question": "رشته و دانشگاه مورد نظر خود را بنویسید:\n<i>مثال: مهندسی کامپیوتر - دانشگاه پروجا</i>",
+    "type": "text",
+    "validation": {"min_length": 5},
+    "next": 10
+  },
+  {
+    "step": 10,
+    "key": "arrival_date",
+    "question": "چه ماهی قصد ورود به ایتالیا دارید؟\n<i>مثال: سپتامبر ۲۰۲۶</i>",
+    "type": "text",
+    "next": 11
+  },
+  {
+    "step": 11,
+    "key": "extra",
+    "question": "سوالات یا توضیحات اضافی دارید؟ (اختیاری)",
+    "type": "text",
+    "optional": true,
+    "next": "final"
+  }
+]

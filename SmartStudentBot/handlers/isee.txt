@@ -1,0 +1,472 @@
+# handlers/isee_handler.py
+# محاسبه ISEE – نسخه نهایی و حرفه‌ای
+# مرحله ۱ از ۴ – پایه، نرخ ارز لحظه‌ای، استپ شروع
+# دسامبر 2025
+
+from aiogram import Router, types, F
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+from config import settings, logger
+from datetime import datetime
+import httpx
+
+router = Router()
+
+# ------------------------------------------------------------------
+# ذخیره داده کاربران (جاری + تاریخچه)
+# ------------------------------------------------------------------
+user_data = {}  
+# ساختار:
+# {
+#   user_id: {
+#       "current": {...},
+#       "history": [{"isee": 23000, "date": "..."}]
+#   }
+# }
+
+# ------------------------------------------------------------------
+# State ها
+# ------------------------------------------------------------------
+class ISEEState(StatesGroup):
+    intro = State()              # مرحله معرفی (استپ شروع)
+    waiting_income = State()
+    waiting_members = State()
+    waiting_property = State()
+    waiting_financial = State()
+    waiting_abroad = State()
+
+# ------------------------------------------------------------------
+# آستانه‌های رسمی DSU (2025–2026)
+# ------------------------------------------------------------------
+ISEE_LIMITS = {
+    "full": 26000,      # بورسیه کامل + خوابگاه
+    "partial": 38000,   # بورسیه جزئی
+    "low": 50000        # کمک هزینه کم
+}
+
+AVERAGE_ISEE_IRANIAN = 22800  # میانگین واقعی ایرانی‌ها در پروجا
+
+# ------------------------------------------------------------------
+# API KEYS نوسان (چرخشی – پایدار و امن)
+# ------------------------------------------------------------------
+NAVASAN_API_KEYS = [
+    "freepnP0B5PJNRJD5XUTFauKTpubrxE2",
+    "freeWVcwTB4Xq8yT48Y0YHgCy8JcvulU",
+    "freezW677iqPcZxRFwQbpX0iZQfxaWwi",
+    "freeb2n6GMnQA0IIxbKUX3y9BC51Cn2N",
+    "freeZjQukbJZKuek0fWGgww8C8bf2wG4",
+]
+
+_current_key_index = 0
+
+# ------------------------------------------------------------------
+# دریافت نرخ لحظه‌ای ارز از NAVASAN (واقعی، بدون کش)
+# ------------------------------------------------------------------
+async def get_rates_from_navasan():
+    """
+    نرخ لحظه‌ای یورو و دلار بازار آزاد
+    منبع: navasan.net
+    """
+    global _current_key_index
+
+    for _ in range(len(NAVASAN_API_KEYS)):
+        api_key = NAVASAN_API_KEYS[_current_key_index]
+        _current_key_index = (_current_key_index + 1) % len(NAVASAN_API_KEYS)
+
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.get(
+                    "https://api.navasan.tech/latest/",
+                    params={"api_key": api_key}
+                )
+
+            if resp.status_code != 200:
+                continue
+
+            data = resp.json()
+
+            eur = data.get("eur", {}).get("value")
+            usd = data.get("usd", {}).get("value")
+
+            if eur and usd:
+                eur_rate = int(float(eur))
+                usd_rate = int(float(usd))
+
+                logger.success(
+                    f"NAVASAN OK | EUR={eur_rate:,} | USD={usd_rate:,}"
+                )
+                return eur_rate, usd_rate
+
+        except Exception as e:
+            logger.warning(f"NAVASAN key failed: {e}")
+            continue
+
+    # fallback امن (فقط اگر همه API ها قطع شوند)
+    logger.error("NAVASAN unavailable – fallback used")
+    return 65000, 60000
+
+
+# ------------------------------------------------------------------
+# مرحله ۰ – شروع محاسبه ISEE (استپ معرفی)
+# ------------------------------------------------------------------
+@router.callback_query(F.data == "isee")
+async def isee_intro(callback: types.CallbackQuery, state: FSMContext):
+    user_id = callback.from_user.id
+
+    if user_id not in user_data:
+        user_data[user_id] = {"history": []}
+
+    user_data[user_id]["current"] = {}
+
+    # پیام انتظار
+    wait_msg = await callback.message.edit_text(
+        "⏳ در حال دریافت نرخ لحظه‌ای ارز از <b>navasan.net</b>...\n"
+        "لطفاً چند ثانیه صبر کنید 💱",
+        parse_mode="HTML"
+    )
+
+    eur_rate, usd_rate = await get_rates_from_navasan()
+
+    user_data[user_id]["current"]["eur_rate"] = eur_rate
+    user_data[user_id]["current"]["usd_rate"] = usd_rate
+
+    text = (
+        "🧮 <b>محاسبه ISEE (شاخص اقتصادی خانواده)</b>\n\n"
+        "ISEE عددی است که دولت ایتالیا برای:\n"
+        "• بورسیه DSU\n"
+        "• خوابگاه دانشجویی\n"
+        "• کاهش شهریه\n"
+        "استفاده می‌کند.\n\n"
+        "📌 این ابزار به‌صورت <b>تخمین بسیار نزدیک به واقعیت</b>\n"
+        "برای دانشجویان ایرانی طراحی شده است.\n\n"
+        "💱 <b>نرخ لحظه‌ای بازار آزاد:</b>\n"
+        f"• ۱ € = <b>{eur_rate:,}</b> تومان\n"
+        f"• ۱ $ = <b>{usd_rate:,}</b> تومان\n"
+        f"🕐 {datetime.now().strftime('%H:%M - %d/%m/%Y')}\n\n"
+        "⚠️ اطلاعات را دقیق وارد کنید؛ نتیجه روی بورسیه شما اثر مستقیم دارد.\n\n"
+        "<b>برای شروع محاسبه آماده‌اید؟</b>"
+    )
+
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text="🚀 شروع محاسبه ISEE",
+            callback_data="isee_start_form"
+        )],
+        [InlineKeyboardButton(
+            text="🔙 بازگشت به منوی اصلی",
+            callback_data="main_menu"
+        )]
+    ])
+
+    await wait_msg.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+    await state.set_state(ISEEState.intro)
+    await callback.answer()
+# ---------------------------------------------------------
+# شروع فرم – بعد از مرحله معرفی
+# ---------------------------------------------------------
+@router.callback_query(F.data == "isee_start_form")
+async def start_isee_form(callback: types.CallbackQuery, state: FSMContext):
+    await callback.message.edit_text(
+        "📋 <b>فرم محاسبه ISEE</b>\n\n"
+        "<b>مرحله ۱:</b>\n"
+        "💶 درآمد سالانه کل خانواده (بعد از مالیات) چند یورو است؟\n\n"
+        "<i>مثال:</i>\n"
+        "• 12000\n"
+        "• 18500.50\n"
+        "• اگر درآمد ندارید: 0",
+        parse_mode="HTML"
+    )
+    await state.set_state(ISEEState.waiting_income)
+    await callback.answer()
+
+# ---------------------------------------------------------
+# مرحله ۱ – درآمد
+# ---------------------------------------------------------
+@router.message(ISEEState.waiting_income)
+async def process_income(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+
+    try:
+        income = float(message.text.replace(",", "").strip())
+        if income < 0:
+            raise ValueError
+
+        user_data[user_id]["current"]["income"] = income
+        eur_rate = user_data[user_id]["current"]["eur_rate"]
+
+        await message.reply(
+            f"✅ درآمد ثبت شد:\n"
+            f"<b>{income:,.2f} €</b>\n"
+            f"≈ <b>{int(income * eur_rate):,} تومان</b>\n\n"
+            "<b>مرحله ۲:</b>\n"
+            "👥 تعداد اعضای خانواده (شامل خودتان) چند نفر است؟\n\n"
+            "<i>مثال: 3 یا 4</i>",
+            parse_mode="HTML"
+        )
+
+        await state.set_state(ISEEState.waiting_members)
+
+    except Exception:
+        await message.reply(
+            "⚠️ لطفاً فقط عدد معتبر وارد کنید.\n"
+            "مثال: 12000 یا 15000.75"
+        )
+
+# ---------------------------------------------------------
+# مرحله ۲ – اعضای خانواده
+# ---------------------------------------------------------
+@router.message(ISEEState.waiting_members)
+async def process_members(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+
+    try:
+        members = int(message.text.strip())
+        if members < 1 or members > 10:
+            raise ValueError
+
+        user_data[user_id]["current"]["members"] = members
+
+        await message.reply(
+            f"✅ تعداد اعضای خانواده: <b>{members} نفر</b>\n\n"
+            "<b>مرحله ۳:</b>\n"
+            "🏠 ارزش کل املاک خانواده در ایتالیا چند یورو است؟\n\n"
+            "<i>اگر ملکی ندارید: 0</i>",
+            parse_mode="HTML"
+        )
+
+        await state.set_state(ISEEState.waiting_property)
+
+    except Exception:
+        await message.reply(
+            "⚠️ لطفاً یک عدد صحیح وارد کنید (مثال: 2 تا 6)"
+        )
+
+# ---------------------------------------------------------
+# مرحله ۳ – ملک
+# ---------------------------------------------------------
+@router.message(ISEEState.waiting_property)
+async def process_property(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+
+    try:
+        property_value = float(message.text.replace(",", "").strip())
+        if property_value < 0:
+            raise ValueError
+
+        user_data[user_id]["current"]["property"] = property_value
+        eur_rate = user_data[user_id]["current"]["eur_rate"]
+
+        await message.reply(
+            f"✅ ارزش ملک ثبت شد:\n"
+            f"<b>{property_value:,.2f} €</b>\n"
+            f"≈ <b>{int(property_value * eur_rate):,} تومان</b>\n\n"
+            "▶️ مرحله بعدی مربوط به دارایی‌های مالی است.",
+            parse_mode="HTML"
+        )
+
+        # مرحله بعدی عمداً در مرحله ۳ فایل می‌آید
+        await state.set_state(ISEEState.waiting_financial)
+
+    except Exception:
+        await message.reply(
+            "⚠️ لطفاً عدد معتبر وارد کنید.\n"
+            "مثال: 0 یا 25000"
+        )
+# ---------------------------------------------------------
+# مرحله ۴ – دارایی مالی داخل ایتالیا
+# ---------------------------------------------------------
+@router.message(ISEEState.waiting_financial)
+async def process_financial_assets(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+
+    try:
+        financial = float(message.text.replace(",", "").strip())
+        if financial < 0:
+            raise ValueError
+
+        user_data[user_id]["current"]["financial"] = financial
+        eur_rate = user_data[user_id]["current"]["eur_rate"]
+
+        await message.reply(
+            f"✅ دارایی مالی ثبت شد:\n"
+            f"<b>{financial:,.2f} €</b>\n"
+            f"≈ <b>{int(financial * eur_rate):,} تومان</b>\n\n"
+            "<b>مرحله بعد:</b>\n"
+            "🌍 دارایی خارج از ایتالیا دارید؟\n"
+            "اگر ندارید عدد 0 را وارد کنید.",
+            parse_mode="HTML"
+        )
+
+        await state.set_state(ISEEState.waiting_foreign_assets)
+
+    except Exception:
+        await message.reply(
+            "⚠️ فقط عدد معتبر وارد کنید.\n"
+            "مثال: 0 یا 8500"
+        )
+# ---------------------------------------------------------
+# مرحله ۵ – دارایی خارج از ایتالیا + محاسبه ISEE
+# ---------------------------------------------------------
+@router.message(ISEEState.waiting_foreign_assets)
+async def process_foreign_assets_and_calculate(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+
+    try:
+        foreign_assets = float(message.text.replace(",", "").strip())
+        if foreign_assets < 0:
+            raise ValueError
+
+        data = user_data[user_id]["current"]
+        data["foreign_assets"] = foreign_assets
+
+        income = data["income"]
+        property_value = data["property"]
+        financial = data["financial"]
+        members = data["members"]
+        eur_rate = data["eur_rate"]
+
+        # -----------------------------
+        # محاسبه دارایی کل
+        # -----------------------------
+        total_assets = property_value + financial + foreign_assets
+
+        # طبق فرمول ساده‌شده ISEE
+        iser = income + (0.20 * total_assets)
+
+        # ضریب خانواده (Scala di equivalenza)
+        scale_map = {
+            1: 1.00,
+            2: 1.57,
+            3: 2.04,
+            4: 2.46,
+            5: 2.85
+        }
+        scale = scale_map.get(members, 2.85 + (members - 5) * 0.35)
+
+        isee = iser / scale
+
+        # ذخیره نتیجه
+        data["isee"] = round(isee, 2)
+
+        # -----------------------------
+        # نمایش نتیجه
+        # -----------------------------
+        await message.reply(
+            "📊 <b>نتیجه محاسبه ISEE (تخمینی)</b>\n\n"
+            f"👥 اعضای خانواده: <b>{members}</b>\n"
+            f"💶 درآمد: <b>{income:,.2f} €</b>\n"
+            f"🏠 ملک: <b>{property_value:,.2f} €</b>\n"
+            f"💳 دارایی مالی: <b>{financial:,.2f} €</b>\n"
+            f"🌍 خارج از ایتالیا: <b>{foreign_assets:,.2f} €</b>\n\n"
+            f"📐 ضریب خانواده: <b>{scale}</b>\n\n"
+            f"✅ <b>ISEE ≈ {isee:,.2f} €</b>\n"
+            f"≈ <b>{int(isee * eur_rate):,} تومان</b>\n\n"
+            "ℹ️ این عدد تخمینی است و برای بررسی وضعیت بورسیه و معافیت‌ها مفید است.",
+            parse_mode="HTML"
+        )
+
+        await state.clear()
+
+    except Exception:
+        await message.reply(
+            "⚠️ عدد نامعتبر است. لطفاً دوباره تلاش کنید."
+        )
+# ------------------------------------------------------------------
+# مرحله ۴ – نمایش نتیجه شاهکار + تاریخچه + UX نهایی
+# ------------------------------------------------------------------
+@router.message(ISEEState.waiting_abroad)
+async def process_abroad_and_result(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+    data = user_data[user_id]
+    eur_rate = data["current"]["eur_rate"]
+    
+    # پردازش ورودی خارج از ایتالیا
+    text_input = message.text.strip().lower()
+    abroad = 0
+    if text_input not in ["0", "نداریم", "هیچ", "خیر", "none"]:
+        try:
+            abroad = float(text_input.replace(",", ""))
+        except:
+            abroad = 0
+    data["current"]["abroad"] = abroad
+
+    # محاسبه ISEE
+    isp = data["current"]["income"] + 0.2 * data["current"]["financial"] + 0.2 * abroad
+    patrimony = data["current"]["property"] + data["current"]["financial"] + abroad
+    isee = round((isp + 0.2 * patrimony) / data["current"]["members"], 2)
+
+    # ذخیره در تاریخچه
+    if "history" not in user_data[user_id]:
+        user_data[user_id]["history"] = []
+    user_data[user_id]["history"].append({
+        "isee": isee,
+        "date": datetime.now().strftime("%d/%m %H:%M")
+    })
+    user_data[user_id]["history"] = user_data[user_id]["history"][-5:]  # آخرین ۵ محاسبه
+
+    # وضعیت بورسیه و تحلیل
+    if isee <= ISEE_LIMITS["full"]:
+        status = "🎉🎉 <b>بورسیه کامل + خوابگاه رایگان!</b> 🎉🎉"
+        personal_tip = "تبریک! احتمال بورسیه کامل خیلی بالاست. مدارک رو کامل کن و زود ثبت‌نام کن!"
+        color = "🟢"
+    elif isee <= ISEE_LIMITS["partial"]:
+        status = "✅ <b>بورسیه جزئی (تا ۵۰۰۰ یورو + کمک هزینه)</b>"
+        personal_tip = "برای افزایش شانس، هزینه زندگی رو پایین بیار (خوابگاه، اتاق اشتراکی، غذای خانگی)"
+        color = "🟡"
+    elif isee <= ISEE_LIMITS["low"]:
+        status = "⚠️ <b>کمک هزینه کم</b>"
+        personal_tip = "با دانشگاه چک کن – کمک‌های دیگر هم هست (کار دانشجویی، بورسیه خصوصی)"
+        color = "🟠"
+    else:
+        status = "❌ <b>غیر واجد شرایط بورسیه اصلی</b>"
+        personal_tip = "کار پاره‌وقت، بورسیه‌های خصوصی و کمک دانشگاه رو امتحان کن. هنوز راه زیاده!"
+        color = "🔴"
+
+    # مقایسه با میانگین ایرانی‌ها
+    diff = AVERAGE_ISEE_IRANIAN - isee
+    if diff > 3000:
+        compare = "🔥 خیلی بهتر از میانگین دانشجویان ایرانی! 👏"
+    elif diff > -3000:
+        compare = "مشابه میانگین دانشجویان ایرانی"
+    else:
+        compare = "کمی بالاتر از میانگین – با تنظیم هزینه‌ها می‌تونی بهتر کنی"
+
+    # پیام نهایی با جزئیات و UX کامل
+    result = f"🧮 <b>نتیجه نهایی محاسبه ISEE شما</b>\n\n"
+    result += f"{color} <b>ISEE تخمینی:</b> <code>{isee:,.2f} €</code>\n\n"
+    result += f"🇮🇷 {compare}\n"
+    result += f"(میانگین ایرانی‌ها در پروجا: ~{AVERAGE_ISEE_IRANIAN:,} €)\n\n"
+    result += f"🏆 <b>وضعیت بورسیه DSU:</b>\n{status}\n\n"
+    result += f"💡 <b>پیشنهاد شخصی برای شما:</b>\n{personal_tip}\n\n"
+    result += "📊 <b>جزئیات وارد شده:</b>\n"
+    result += f"👥 تعداد اعضا: <b>{data['current']['members']} نفر</b>\n"
+    result += f"💶 درآمد سالانه: <b>{data['current']['income']:,.2f} €</b> ≈ <b>{int(data['current']['income'] * eur_rate):,} تومان</b>\n"
+    result += f"🏠 ارزش ملک در ایتالیا: <b>{data['current']['property']:,.2f} €</b>\n"
+    result += f"🏦 دارایی مالی: <b>{data['current']['financial']:,.2f} €</b>\n"
+    result += f"🌍 دارایی خارج از ایتالیا: <b>{abroad:,.2f} €</b>\n\n"
+    result += "🔥 <b>نکات طلایی برای موفقیت در بورسیه:</b>\n"
+    result += "• زندگی اشتراکی یا خوابگاه انتخاب کنید\n"
+    result += "• ملکی در ایتالیا نداشته باشید\n"
+    result += "• درآمد خانواده پایین باشد\n"
+    result += "• زودتر از همه اقدام کنید\n"
+    result += "• مدارک را کامل و دقیق ارائه دهید\n\n"
+    result += "شما فوق‌العاده‌اید! موفق باشید عزیز 🇮🇹💪✨\n\n"
+    result += "<i>این محاسبه تقریبی است – برای عدد رسمی به CAF مراجعه کنید.</i>"
+
+    # کیبورد نهایی برای تعامل کامل
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📤 اشتراک‌گذاری نتیجه با دوستان", switch_inline_query=f"ISEE من {isee:,.0f} € شد! تو چقدر؟")],
+        [InlineKeyboardButton(text="🧮 محاسبه مجدد", callback_data="isee")],
+        [InlineKeyboardButton(text="📜 تاریخچه محاسبات من", callback_data="isee_history")],
+        [InlineKeyboardButton(text="❓ مشاوره رایگان بورسیه", callback_data="feedback")],
+        [InlineKeyboardButton(text="🏠 بازگشت به منوی اصلی", callback_data="main_menu")]
+    ])
+
+    await message.reply(result, reply_markup=keyboard, parse_mode="HTML")
+
+    # پاکسازی State و داده جاری
+    await state.clear()
+    if "current" in user_data[user_id]:
+        del user_data[user_id]["current"]

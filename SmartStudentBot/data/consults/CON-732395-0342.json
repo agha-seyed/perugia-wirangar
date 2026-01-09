@@ -1,0 +1,91 @@
+{
+  "consult_id": "CON-732395-0342",
+  "telegram_id": 1886390342,
+  "telegram_username": "shr11228",
+  "telegram_fullname": "sahar",
+  "telegram_language": "en",
+  "created_at": "2026-01-06 20:46:35",
+  "updated_at": "2026-01-06 22:10:23",
+  "submitted_at": "2026-01-06 20:55:45",
+  "status": "in_progress",
+  "priority": "low",
+  "source": "telegram_bot",
+  "personal": {
+    "name": "سحر پودینه",
+    "age": 19,
+    "residence_country": "🇮🇷 ایران",
+    "residence_city": ""
+  },
+  "education": {
+    "current_level": "دیپلم",
+    "current_field": "ریاضی فیزیک",
+    "graduation_year": 2024,
+    "gpa": "18/5",
+    "gpa_scale": "از ۲۰",
+    "university_name": ""
+  },
+  "language": {
+    "has_certificate": false,
+    "certificate_type": "ندارم",
+    "certificate_score": "",
+    "self_assessment_level": "🔴 مبتدی (A1)",
+    "italian_knowledge": ""
+  },
+  "study_plan": {
+    "target_degree": "کارشناسی (Bachelor)",
+    "target_field": "مهندسی کامپیوتر یا دیتا ساینس یا mba",
+    "target_universities": [
+      "فرقی نمی‌کند"
+    ],
+    "preferred_city": "",
+    "start_semester": "پاییز 2026",
+    "scholarship_interest": true
+  },
+  "financial": {
+    "monthly_budget_eur": 400,
+    "has_sponsor": false,
+    "needs_scholarship": true,
+    "can_work_parttime": true
+  },
+  "contact": {
+    "phone": "+9383440434",
+    "phone_verified": false,
+    "whatsapp": "",
+    "email": "",
+    "preferred_contact_method": "telegram",
+    "preferred_contact_time": ""
+  },
+  "documents": {
+    "resume_file_id": "",
+    "resume_file_name": "",
+    "additional_files": []
+  },
+  "notes": {
+    "user_notes": "من یکسال جهشی تو مدرسه درس خوندم و الان فوق دیپلم تربیت بدنی با معدل ۱۵ هم دارم",
+    "admin_notes": "",
+    "internal_tags": []
+  },
+  "tracking": {
+    "current_step": 14,
+    "completion_percentage": 100,
+    "last_activity": "2026-01-06 20:55:45",
+    "follow_ups": [
+      {
+        "date": "2026-01-06 22:10:23",
+        "admin_id": 7801271819,
+        "action": "تغییر وضعیت به in_progress",
+        "note": "تغییر وضعیت به «در حال پیگیری» توسط E"
+      }
+    ],
+    "status_history": [
+      {
+        "from": "pending",
+        "to": "in_progress",
+        "changed_at": "2026-01-06 22:10:23",
+        "changed_by": 7801271819,
+        "note": "تغییر وضعیت به «در حال پیگیری» توسط E"
+      }
+    ]
+  },
+  "editing_field": "phone"
+}

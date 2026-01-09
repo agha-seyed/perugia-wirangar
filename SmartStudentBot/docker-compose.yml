@@ -1,0 +1,48 @@
+# این فایل docker-compose تمام سرویس‌ها را مدیریت می‌کند
+# version حذف شده چون دیگر لازم نیست (Docker Compose v2+)
+
+services:
+  # سرویس اصلی بات
+  app:
+    build: .
+    container_name: smartstudentbot-app
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      - postgres
+      - redis
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app                    # برای توسعه زنده
+    command: python main.py       # در لوکال polling
+
+  # PostgreSQL
+  postgres:
+    image: postgres:16-alpine
+    container_name: smartstudentbot-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: smartstudentbot
+      POSTGRES_PASSWORD: supersecretpassword123
+      POSTGRES_DB: smartstudentbot
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  # Redis
+  redis:
+    image: redis:7-alpine
+    container_name: smartstudentbot-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+
+volumes:
+  postgres_data:
+  redis_data:
