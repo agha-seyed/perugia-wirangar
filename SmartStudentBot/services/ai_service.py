@@ -49,15 +49,23 @@ CHAT_MODEL_PRIORITY = ["gemini-1.5-flash", "gemini-1.5-pro"]
 VISION_MODEL_PRIORITY = ["gemini-1.5-flash", "gemini-1.5-pro"]
 AUDIO_MODEL_PRIORITY = ["gemini-1.5-flash", "gemini-1.5-pro"]
 
-SYSTEM_PROMPTS = {
-    "student_assistant": "You are a helpful assistant for students in Perugia, Italy. Always reply in Persian.",
-    "translator": "You are a translator between Italian, English and Persian.",
-    "italian_teacher": "You are an Italian teacher teaching Persian speakers.",
-    "support_agent": "You are a support agent.",
-    "summarizer": "Summarize the text in Persian.",
-    "vision_analyzer": "Analyze this image and describe it in Persian.",
-    "audio_transcriber": "Transcribe this audio.",
-}
+def get_system_prompt(context: str, lang_code: str = "fa") -> str:
+    lang_instruction = {
+        "fa": "Reply in Persian (Farsi).",
+        "en": "Reply in English.",
+        "it": "Reply in Italian."
+    }.get(lang_code, "Reply in Persian (Farsi).")
+    
+    base_prompts = {
+        "student_assistant": f"You are a helpful and expert student assistant for Perugia university students in Italy. Guide them through academics, ADiSU scholarships, housing, and student life in Perugia. {lang_instruction}",
+        "translator": "You are a professional translator between Italian, English and Persian.",
+        "italian_teacher": f"You are a patient Italian language tutor explaining concepts clearly. {lang_instruction}",
+        "support_agent": f"You are a polite customer support agent for SmartStudentBot. {lang_instruction}",
+        "summarizer": f"Summarize the provided text concisely. {lang_instruction}",
+        "vision_analyzer": f"Analyze this image in detail and describe its contents. {lang_instruction}",
+        "audio_transcriber": f"Transcribe this audio message and answer appropriately. {lang_instruction}",
+    }
+    return base_prompts.get(context, base_prompts["student_assistant"])
 
 class AIService:
     def __init__(self):
@@ -97,10 +105,11 @@ class AIService:
         model: Optional[str] = None,
         history: Optional[List[Dict[str, str]]] = None,
         use_cache: bool = True,
+        lang_code: str = "fa",
     ) -> AIResponse:
         start_time = time.time()
         
-        system_prompt = SYSTEM_PROMPTS.get(context, SYSTEM_PROMPTS["student_assistant"])
+        system_prompt = get_system_prompt(context, lang_code=lang_code)
         target_model = model if model in ["gemini-1.5-flash", "gemini-1.5-pro"] else "gemini-1.5-flash"
         
         gen_model = self._get_gemini_model(target_model, system_instruction=system_prompt)
@@ -200,9 +209,5 @@ class AIService:
             "models_available": len(AVAILABLE_MODELS),
             "healthy": True
         }
-
-    def save_stats(self):
-        """ذخیره آمار مصرف هوش مصنوعی"""
-        pass
 
 ai_service = AIService()

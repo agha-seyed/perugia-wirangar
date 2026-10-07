@@ -1,5 +1,20 @@
 import { useState } from 'react';
-import { Box, Typography, Card, Divider, Chip, ButtonBase } from '@mui/material';
+import {
+  Box,
+  Typography,
+  Card,
+  CardContent,
+  Divider,
+  Chip,
+  ButtonBase,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button,
+  TextField,
+  IconButton
+} from '@mui/material';
 import {
   Cloud,
   Person,
@@ -15,7 +30,23 @@ import {
   Terminal,
   AutoFixHigh,
   Stars,
-  School
+  School,
+  Close,
+  OpenInNew,
+  CheckCircle,
+  AccountBalance,
+  Apartment,
+  AttachMoney,
+  Info,
+  DirectionsBike,
+  Computer,
+  MenuBook,
+  LocalFireDepartment,
+  Kitchen,
+  ConfirmationNumber,
+  Map,
+  Campaign,
+  SupportAgent
 } from '@mui/icons-material';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -79,6 +110,96 @@ const translations = {
   }
 };
 
+const modalTranslations = {
+  fa: {
+    iseeTitle: "🧮 شبیه‌ساز و محاسبه‌گر سریع ISEE Parificato",
+    iseeDesc: "تخمین هوشمند عدد ایزه و ارزیابی شانس قبولی در بورسیه استانی ADiSU Umbria",
+    familyMembers: "تعداد اعضای خانواده",
+    annualIncome: "درآمد سالانه خانواده (€)",
+    realEstate: "ارزش املاک و مستغلات (€)",
+    financialAssets: "موجودی بانکی و دارایی مالی (€)",
+    eligibleFull: "🎉 واجد شرایط بورسیه کامل استانی ADiSU (تا ۷۰۰۰ یورو + خوابگاه رایگان + غذای رایگان)",
+    notEligible: "⚠️ بالاتر از سقف ۲۵,۵۰۰ یورو - مشمول تخفیف پلکانی شهریه دانشگاه UniPG",
+    openInBot: "🚀 صدور کارنامه رسمی در ربات تلگرام",
+    close: "بستن",
+    marketTitle: "🛒 بازارچه دانشجویی پروجا",
+    marketDesc: "خرید و فروش لوازم دست‌دوم، کتب و دوچرخه دانشجویی در پروجا",
+    contactSeller: "پیام به فروشنده",
+    postAdInBot: "➕ ثبت آگهی جدید در ربات تلگرام",
+    eventsTitle: "🎉 رویدادها، تورها و دورهمی‌های دانشجویی",
+    eventsDesc: "تورهای تفریحی، کارگاه‌های اداری و دورهمی‌های دانشجویان در پروجا",
+    joinEventInBot: "🌟 هماهنگی و شرکت در ربات تلگرام",
+    placesTitle: "📍 مکان‌های حیاتی و اداری پروجا",
+    placesDesc: "آدرس و مسیریابی سریع به مراکز ضروری دانشجویی",
+    openMap: "🗺 مسیریابی در نقشه",
+    morePlacesInBot: "📍 راهنمای صوتی و لیست کامل در ربات",
+    newsTitle: "📰 اخبار و اطلاعیه‌های رسمی UniPG",
+    newsDesc: "آخرین اطلاعیه‌های بورسیه، دانشگاه و حمل‌ونقل شهری",
+    openNewsInBot: "🔔 مشاهده اخبار کامل در ربات تلگرام",
+    consultTitle: "💬 مشاوره تخصصی تحصیلی و امور اداری",
+    consultDesc: "ثبت پرونده پذیرش، ویزا، بورسیه ADiSU و پرمسو با مشاوران با‌تجربه",
+    startConsultInBot: "📝 شروع مشاوره در ربات تلگرام"
+  },
+  en: {
+    iseeTitle: "🧮 Smart ISEE Parificato Calculator",
+    iseeDesc: "Estimate your ISEE score and ADiSU Umbria scholarship eligibility",
+    familyMembers: "Family Members Count",
+    annualIncome: "Annual Family Income (€)",
+    realEstate: "Real Estate Property Value (€)",
+    financialAssets: "Bank Balance & Movable Assets (€)",
+    eligibleFull: "🎉 Eligible for Full ADiSU Scholarship (~€7,000 + Free Housing + 2 Meals/day)",
+    notEligible: "⚠️ Over €25,500 threshold - Eligible for tiered tuition reduction at UniPG",
+    openInBot: "🚀 Get Official PDF Report in Telegram Bot",
+    close: "Close",
+    marketTitle: "🛒 Perugia Student Marketplace",
+    marketDesc: "Second-hand student furniture, bikes, and textbooks in Perugia",
+    contactSeller: "Message Seller",
+    postAdInBot: "➕ Post New Ad in Telegram Bot",
+    eventsTitle: "🎉 Student Events & Tours in Perugia",
+    eventsDesc: "Tours, legal workshops, and international student meetups",
+    joinEventInBot: "🌟 RSVP & Join in Telegram Bot",
+    placesTitle: "📍 Essential Perugia Student Landmarks",
+    placesDesc: "Directions and key info for administrative and university locations",
+    openMap: "🗺 Navigate on Map",
+    morePlacesInBot: "📍 Full Audio Guide & Locations in Bot",
+    newsTitle: "📰 UniPG & Perugia Official News",
+    newsDesc: "Latest updates on scholarships, exams, and urban transit",
+    openNewsInBot: "🔔 Read Full Bulletins in Telegram Bot",
+    consultTitle: "💬 University & Legal Consultation",
+    consultDesc: "Guidance on admissions, visas, ADiSU scholarship, and residency permit",
+    startConsultInBot: "📝 Start Consultation in Telegram Bot"
+  },
+  it: {
+    iseeTitle: "🧮 Calcolatore Rapido ISEE Parificato",
+    iseeDesc: "Simula il valore del tuo ISEE e verifica i requisiti per la borsa ADiSU Umbria",
+    familyMembers: "Numero Componenti Nucleo Familiare",
+    annualIncome: "Reddito Familiare Annuo (€)",
+    realEstate: "Valore Patrimonio Immobiliare (€)",
+    financialAssets: "Saldo Patrimonio Mobiliare (€)",
+    eligibleFull: "🎉 Idoneo Borsa ADiSU Completa (fino a 7.000€ + Alloggio Gratuito + Mensa)",
+    notEligible: "⚠️ Supera la soglia di 25.500€ - Idoneo a riduzione parziale tasse UniPG",
+    openInBot: "🚀 Richiedi Report Ufficiale nel Bot Telegram",
+    close: "Chiudi",
+    marketTitle: "🛒 Mercatino Studentesco di Perugia",
+    marketDesc: "Compravendita di libri, biciclette e arredi usati a Perugia",
+    contactSeller: "Contatta Venditore",
+    postAdInBot: "➕ Pubblica Annuncio nel Bot Telegram",
+    eventsTitle: "🎉 Eventi, Tour e Incontri a Perugia",
+    eventsDesc: "Gite culturali, workshop burocratici e feste universitarie",
+    joinEventInBot: "🌟 Partecipa nel Bot Telegram",
+    placesTitle: "📍 Punti Chiave per Studenti a Perugia",
+    placesDesc: "Indirizzi e mappe per questura, mense universitarie e uffici ADiSU",
+    openMap: "🗺 Apri su Google Maps",
+    morePlacesInBot: "📍 Guida Completa dei Luoghi nel Bot",
+    newsTitle: "📰 Notizie Ufficiali UniPG & Trasporti",
+    newsDesc: "Avvisi su scadenze borse di studio e aggiornamenti cittadini",
+    openNewsInBot: "🔔 Leggi Notizie nel Bot Telegram",
+    consultTitle: "💬 Consulenza e Assistenza Studenti",
+    consultDesc: "Supporto su immatricolazione, visto, borsa di studio e permesso di soggiorno",
+    startConsultInBot: "📝 Avvia Consulenza nel Bot Telegram"
+  }
+};
+
 type LangKey = 'fa' | 'en' | 'it';
 
 interface DashboardProps {
@@ -87,8 +208,32 @@ interface DashboardProps {
 
 export default function Dashboard({ onNavigate }: DashboardProps) {
   const [lang, setLang] = useState<LangKey>('fa');
+  const [activeModal, setActiveModal] = useState<string | null>(null);
+
+  // ISEE Calculator State
+  const [familyMembers, setFamilyMembers] = useState<number>(4);
+  const [annualIncome, setAnnualIncome] = useState<number>(8000);
+  const [realEstate, setRealEstate] = useState<number>(0);
+  const [financialAssets, setFinancialAssets] = useState<number>(1500);
+
   const t = translations[lang];
+  const mt = modalTranslations[lang];
   const isRtl = lang === 'fa';
+
+  // Real-time ISEE & ISPE calculation
+  const getFamilyScale = (members: number) => {
+    if (members <= 1) return 1.0;
+    if (members === 2) return 1.57;
+    if (members === 3) return 2.04;
+    if (members === 4) return 2.46;
+    if (members === 5) return 2.85;
+    return 2.85 + (members - 5) * 0.35;
+  };
+
+  const scale = getFamilyScale(familyMembers);
+  const iseeValue = Math.round((annualIncome + 0.2 * (realEstate + financialAssets)) / scale);
+  const ispeValue = Math.round((realEstate + financialAssets) / scale);
+  const isEligibleScholarship = iseeValue <= 25500 && ispeValue <= 55000;
 
   const menuItems = [
     { id: 'isee', icon: <Calculate sx={{ fontSize: 36 }} />, color: '#FFD700', bg: 'rgba(255, 215, 0, 0.12)' },
@@ -102,14 +247,29 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
     { id: 'consult', icon: <HeadsetMic sx={{ fontSize: 36 }} />, color: '#E60067', bg: 'rgba(230, 0, 103, 0.12)' }
   ];
 
+  const handleAction = (actionId: string) => {
+    const tg = (window as any).Telegram?.WebApp;
+    if (tg) {
+      if (tg.HapticFeedback) {
+        tg.HapticFeedback.notificationOccurred('success');
+      }
+      try {
+        tg.sendData(JSON.stringify({ action: actionId }));
+      } catch (_) {}
+      if (tg.openTelegramLink) {
+        tg.openTelegramLink(`https://t.me/SmartStudentPerugiaBot?start=${actionId}`);
+        return;
+      }
+    }
+    window.open(`https://t.me/SmartStudentPerugiaBot?start=${actionId}`, '_blank');
+  };
+
   const handleItemClick = (id: string) => {
     if (id === 'roommate') onNavigate?.(1);
     else if (id === 'ai') onNavigate?.(2);
     else if (id === 'weather') onNavigate?.(3);
-    else if (id === 'isee') {
-      alert('🧮 محاسبه هوشمند ISEE:\nبرای دریافت گزارش جامع عددی و کارنامه تخمین بورسیه، لطفاً از دستور /start و منوی محاسبه ISEE در تلگرام استفاده کنید.');
-    } else {
-      alert(`✨ بخش «${(t.menus as any)[id]}» آماده خدمات‌رسانی در ربات هوشمند شماست.`);
+    else {
+      setActiveModal(id);
     }
   };
 
@@ -382,6 +542,570 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
           </Box>
         </motion.div>
       </Box>
+
+      {/* ═══════════════════════════════════════════════════════════════════════════ */}
+      {/* 1. مودال محاسبه‌گر هوشمند ISEE */}
+      {/* ═══════════════════════════════════════════════════════════════════════════ */}
+      <Dialog
+        open={activeModal === 'isee'}
+        onClose={() => setActiveModal(null)}
+        slotProps={{
+          paper: {
+            sx: {
+              background: 'linear-gradient(145deg, #072723 0%, #031715 100%)',
+              border: '1px solid rgba(255, 215, 0, 0.35)',
+              borderRadius: 4,
+              color: '#F0FDF4',
+              maxWidth: 460,
+              width: '95%',
+              p: 1
+            }
+          }
+        }}
+      >
+        <DialogTitle sx={{ color: '#FFD700', fontWeight: 900, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>{mt.iseeTitle}</span>
+          <IconButton onClick={() => setActiveModal(null)} sx={{ color: '#94D2BD' }} size="small">
+            <Close />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+          <Typography variant="body2" sx={{ color: '#94D2BD', fontSize: '0.82rem', lineHeight: 1.6 }}>
+            {mt.iseeDesc}
+          </Typography>
+
+          <TextField
+            label={mt.familyMembers}
+            type="number"
+            size="small"
+            value={familyMembers}
+            onChange={(e) => setFamilyMembers(Math.max(1, Number(e.target.value)))}
+            slotProps={{ inputLabel: { sx: { color: '#94D2BD' } } }}
+            sx={{ '& .MuiOutlinedInput-root': { color: '#fff', '& fieldset': { borderColor: 'rgba(0,168,150,0.4)' } } }}
+          />
+          <TextField
+            label={mt.annualIncome}
+            type="number"
+            size="small"
+            value={annualIncome}
+            onChange={(e) => setAnnualIncome(Math.max(0, Number(e.target.value)))}
+            slotProps={{ inputLabel: { sx: { color: '#94D2BD' } } }}
+            sx={{ '& .MuiOutlinedInput-root': { color: '#fff', '& fieldset': { borderColor: 'rgba(0,168,150,0.4)' } } }}
+          />
+          <TextField
+            label={mt.realEstate}
+            type="number"
+            size="small"
+            value={realEstate}
+            onChange={(e) => setRealEstate(Math.max(0, Number(e.target.value)))}
+            slotProps={{ inputLabel: { sx: { color: '#94D2BD' } } }}
+            sx={{ '& .MuiOutlinedInput-root': { color: '#fff', '& fieldset': { borderColor: 'rgba(0,168,150,0.4)' } } }}
+          />
+          <TextField
+            label={mt.financialAssets}
+            type="number"
+            size="small"
+            value={financialAssets}
+            onChange={(e) => setFinancialAssets(Math.max(0, Number(e.target.value)))}
+            slotProps={{ inputLabel: { sx: { color: '#94D2BD' } } }}
+            sx={{ '& .MuiOutlinedInput-root': { color: '#fff', '& fieldset': { borderColor: 'rgba(0,168,150,0.4)' } } }}
+          />
+
+          {/* نتایج محاسبه آنی */}
+          <Box sx={{
+            background: 'rgba(7, 39, 35, 0.75)',
+            border: '1px solid #FFD700',
+            borderRadius: 3,
+            p: 2,
+            mt: 1,
+            boxShadow: '0 4px 15px rgba(0,0,0,0.4)'
+          }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+              <Typography variant="body2" sx={{ color: '#94D2BD' }}>ISEE Parificato:</Typography>
+              <Typography variant="subtitle2" sx={{ color: '#FFD700', fontWeight: 900 }}>
+                {iseeValue.toLocaleString()} €
+              </Typography>
+            </Box>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+              <Typography variant="body2" sx={{ color: '#94D2BD' }}>ISPE:</Typography>
+              <Typography variant="subtitle2" sx={{ color: '#02C39A', fontWeight: 900 }}>
+                {ispeValue.toLocaleString()} €
+              </Typography>
+            </Box>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1.5 }}>
+              <Typography variant="body2" sx={{ color: '#94D2BD' }}>Scala di Equivalenza:</Typography>
+              <Typography variant="subtitle2" sx={{ color: '#FFFFFF', fontWeight: 800 }}>
+                {scale.toFixed(2)}
+              </Typography>
+            </Box>
+            <Divider sx={{ borderColor: 'rgba(255, 215, 0, 0.2)', mb: 1.5 }} />
+            <Typography variant="caption" sx={{
+              color: isEligibleScholarship ? '#02C39A' : '#FFB703',
+              fontWeight: 800,
+              display: 'block',
+              lineHeight: 1.5
+            }}>
+              {isEligibleScholarship ? mt.eligibleFull : mt.notEligible}
+            </Typography>
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ p: 2, justifyContent: 'space-between' }}>
+          <Button onClick={() => setActiveModal(null)} sx={{ color: '#94D2BD' }}>
+            {mt.close}
+          </Button>
+          <Button
+            variant="contained"
+            onClick={() => handleAction('isee')}
+            startIcon={<OpenInNew />}
+            sx={{
+              background: 'linear-gradient(135deg, #B8004F 0%, #6E002B 100%)',
+              color: '#FFD700',
+              fontWeight: 800,
+              border: '1px solid #FFD700'
+            }}
+          >
+            {mt.openInBot}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* ═══════════════════════════════════════════════════════════════════════════ */}
+      {/* 2. مودال بازارچه دانشجویی */}
+      {/* ═══════════════════════════════════════════════════════════════════════════ */}
+      <Dialog
+        open={activeModal === 'market'}
+        onClose={() => setActiveModal(null)}
+        slotProps={{
+          paper: {
+            sx: {
+              background: 'linear-gradient(145deg, #072723 0%, #031715 100%)',
+              border: '1px solid rgba(255, 215, 0, 0.35)',
+              borderRadius: 4,
+              color: '#F0FDF4',
+              maxWidth: 480,
+              width: '95%',
+              p: 1
+            }
+          }
+        }}
+      >
+        <DialogTitle sx={{ color: '#FFD700', fontWeight: 900, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>{mt.marketTitle}</span>
+          <IconButton onClick={() => setActiveModal(null)} sx={{ color: '#94D2BD' }} size="small">
+            <Close />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, pt: 1 }}>
+          <Typography variant="body2" sx={{ color: '#94D2BD', fontSize: '0.82rem' }}>
+            {mt.marketDesc}
+          </Typography>
+
+          {[
+            { id: 1, title: 'دوچرخه شهری Perugia City Bike (۷ دنده)', price: 70, loc: 'Elce', contact: '@ali_perugia', icon: <DirectionsBike sx={{ color: '#02C39A' }} /> },
+            { id: 2, title: 'مانیتور ۲۴ اینچ Dell IPS همراه کابل HDMI', price: 85, loc: 'Centro', contact: '@sara_student', icon: <Computer sx={{ color: '#FFD700' }} /> },
+            { id: 3, title: 'پکیج کامل کتاب‌های ایتالیایی Nuovo Espresso', price: 30, loc: 'Fontivegge', contact: '@omid_pg', icon: <MenuBook sx={{ color: '#94D2BD' }} /> },
+            { id: 4, title: 'هیتر برقی کم‌مصرف Delonghi', price: 20, loc: 'Elce', contact: '@perugia_reza', icon: <LocalFireDepartment sx={{ color: '#E63946' }} /> },
+            { id: 5, title: 'سرویس ظروف تفال و قابلمه دانشجویی', price: 25, loc: 'Monteluce', contact: '@student_pg', icon: <Kitchen sx={{ color: '#FFB703' }} /> }
+          ].map((item) => (
+            <Box
+              key={item.id}
+              sx={{
+                p: 1.5,
+                borderRadius: 2.5,
+                background: 'rgba(7, 39, 35, 0.6)',
+                border: '1px solid rgba(255, 215, 0, 0.15)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                {item.icon}
+                <Box>
+                  <Typography variant="subtitle2" sx={{ color: '#FFFFFF', fontWeight: 800, fontSize: '0.85rem' }}>
+                    {item.title}
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: '#94D2BD' }}>
+                    {item.loc} • تماس: {item.contact}
+                  </Typography>
+                </Box>
+              </Box>
+              <Box sx={{ textAlign: 'right' }}>
+                <Typography variant="subtitle2" sx={{ color: '#FFD700', fontWeight: 900 }}>
+                  {item.price} €
+                </Typography>
+                <Button
+                  size="small"
+                  onClick={() => {
+                    const tg = (window as any).Telegram?.WebApp;
+                    const u = item.contact.replace('@', '');
+                    if (tg?.openTelegramLink) tg.openTelegramLink(`https://t.me/${u}`);
+                    else window.open(`https://t.me/${u}`, '_blank');
+                  }}
+                  sx={{ color: '#02C39A', p: 0, minWidth: 'auto', fontSize: '0.72rem' }}
+                >
+                  {mt.contactSeller}
+                </Button>
+              </Box>
+            </Box>
+          ))}
+        </DialogContent>
+        <DialogActions sx={{ p: 2, justifyContent: 'space-between' }}>
+          <Button onClick={() => setActiveModal(null)} sx={{ color: '#94D2BD' }}>
+            {mt.close}
+          </Button>
+          <Button
+            variant="contained"
+            onClick={() => handleAction('market')}
+            startIcon={<OpenInNew />}
+            sx={{
+              background: 'linear-gradient(135deg, #B8004F 0%, #6E002B 100%)',
+              color: '#FFD700',
+              fontWeight: 800,
+              border: '1px solid #FFD700'
+            }}
+          >
+            {mt.postAdInBot}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* ═══════════════════════════════════════════════════════════════════════════ */}
+      {/* 3. مودال رویدادها و تورها */}
+      {/* ═══════════════════════════════════════════════════════════════════════════ */}
+      <Dialog
+        open={activeModal === 'events'}
+        onClose={() => setActiveModal(null)}
+        slotProps={{
+          paper: {
+            sx: {
+              background: 'linear-gradient(145deg, #072723 0%, #031715 100%)',
+              border: '1px solid rgba(255, 215, 0, 0.35)',
+              borderRadius: 4,
+              color: '#F0FDF4',
+              maxWidth: 480,
+              width: '95%',
+              p: 1
+            }
+          }
+        }}
+      >
+        <DialogTitle sx={{ color: '#FFD700', fontWeight: 900, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>{mt.eventsTitle}</span>
+          <IconButton onClick={() => setActiveModal(null)} sx={{ color: '#94D2BD' }} size="small">
+            <Close />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, pt: 1 }}>
+          <Typography variant="body2" sx={{ color: '#94D2BD', fontSize: '0.82rem' }}>
+            {mt.eventsDesc}
+          </Typography>
+
+          {[
+            { id: 1, title: 'تور پاییزی دریاچه تراسیمنو و شهر باستانی آسیزی', date: 'شنبه آینده ساعت ۹:۰۰', loc: 'ایستگاه Fontivegge', tag: 'گردشگری' },
+            { id: 2, title: 'دورهمی و عصرانه دانشجویان در Piazza IV Novembre', date: 'چهارشنبه ساعت ۱۹:۰۰', loc: 'میدان مرکزی پینچتو', tag: 'دورهمی' },
+            { id: 3, title: 'کارگاه رایگان آموزش اخذ پرمسو و معافیت با CAF', date: 'یکشنبه ساعت ۱۷:۰۰', loc: 'آنلاین و حضوری', tag: 'اداری/حقوقی' },
+            { id: 4, title: 'شب سینمای ایتالیایی در سینما PostModernissimo', date: 'دوشنبه ساعت ۲۰:۳۰', loc: 'مرکز تاریخی', tag: 'فرهنگی' }
+          ].map((ev) => (
+            <Box
+              key={ev.id}
+              sx={{
+                p: 1.5,
+                borderRadius: 2.5,
+                background: 'rgba(7, 39, 35, 0.6)',
+                border: '1px solid rgba(255, 215, 0, 0.15)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 0.5
+              }}
+            >
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography variant="subtitle2" sx={{ color: '#FFFFFF', fontWeight: 800 }}>
+                  {ev.title}
+                </Typography>
+                <Chip size="small" label={ev.tag} sx={{ background: 'rgba(0,168,150,0.25)', color: '#02C39A', fontSize: '0.7rem' }} />
+              </Box>
+              <Typography variant="caption" sx={{ color: '#FFD700', fontWeight: 700 }}>
+                📅 {ev.date} • 📍 {ev.loc}
+              </Typography>
+            </Box>
+          ))}
+        </DialogContent>
+        <DialogActions sx={{ p: 2, justifyContent: 'space-between' }}>
+          <Button onClick={() => setActiveModal(null)} sx={{ color: '#94D2BD' }}>
+            {mt.close}
+          </Button>
+          <Button
+            variant="contained"
+            onClick={() => handleAction('events')}
+            startIcon={<OpenInNew />}
+            sx={{
+              background: 'linear-gradient(135deg, #B8004F 0%, #6E002B 100%)',
+              color: '#FFD700',
+              fontWeight: 800,
+              border: '1px solid #FFD700'
+            }}
+          >
+            {mt.joinEventInBot}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* ═══════════════════════════════════════════════════════════════════════════ */}
+      {/* 4. مودال مکان‌های مهم پروجا */}
+      {/* ═══════════════════════════════════════════════════════════════════════════ */}
+      <Dialog
+        open={activeModal === 'places'}
+        onClose={() => setActiveModal(null)}
+        slotProps={{
+          paper: {
+            sx: {
+              background: 'linear-gradient(145deg, #072723 0%, #031715 100%)',
+              border: '1px solid rgba(255, 215, 0, 0.35)',
+              borderRadius: 4,
+              color: '#F0FDF4',
+              maxWidth: 480,
+              width: '95%',
+              p: 1
+            }
+          }
+        }}
+      >
+        <DialogTitle sx={{ color: '#FFD700', fontWeight: 900, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>{mt.placesTitle}</span>
+          <IconButton onClick={() => setActiveModal(null)} sx={{ color: '#94D2BD' }} size="small">
+            <Close />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, pt: 1 }}>
+          <Typography variant="body2" sx={{ color: '#94D2BD', fontSize: '0.82rem' }}>
+            {mt.placesDesc}
+          </Typography>
+
+          {[
+            { id: 1, name: 'Questura di Perugia (اداره پلیس مهاجرت)', addr: 'Via Emanuele Petri', map: 'https://maps.google.com/?q=Questura+di+Perugia', icon: <Apartment sx={{ color: '#02C39A' }} /> },
+            { id: 2, name: 'Mensa Universitaria Via Pascoli (سلف مرکزی دانشگاه)', addr: 'Via Pascoli 23', map: 'https://maps.google.com/?q=Mensa+Universitaria+Perugia', icon: <Kitchen sx={{ color: '#FFD700' }} /> },
+            { id: 3, name: 'ADiSU Umbria (ساختمان بورسیه و خوابگاه)', addr: 'Via Faina 8', map: 'https://maps.google.com/?q=ADiSU+Perugia', icon: <School sx={{ color: '#B8004F' }} /> },
+            { id: 4, name: 'Stazione Perugia Fontivegge (ایستگاه اصلی قطار)', addr: 'Piazza Vittorio Veneto', map: 'https://maps.google.com/?q=Stazione+Perugia+Fontivegge', icon: <LocationOn sx={{ color: '#FFB703' }} /> },
+            { id: 5, name: 'Minimetro Pincetto (مرکز تاریخی)', addr: 'Pincetto Centro Storico', map: 'https://maps.google.com/?q=Minimetro+Pincetto', icon: <Map sx={{ color: '#94D2BD' }} /> }
+          ].map((place) => (
+            <Box
+              key={place.id}
+              sx={{
+                p: 1.5,
+                borderRadius: 2.5,
+                background: 'rgba(7, 39, 35, 0.6)',
+                border: '1px solid rgba(255, 215, 0, 0.15)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                {place.icon}
+                <Box>
+                  <Typography variant="subtitle2" sx={{ color: '#FFFFFF', fontWeight: 800, fontSize: '0.85rem' }}>
+                    {place.name}
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: '#94D2BD' }}>
+                    {place.addr}
+                  </Typography>
+                </Box>
+              </Box>
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={() => window.open(place.map, '_blank')}
+                sx={{
+                  borderColor: 'rgba(255, 215, 0, 0.4)',
+                  color: '#FFD700',
+                  fontSize: '0.72rem',
+                  borderRadius: 2,
+                  textTransform: 'none'
+                }}
+              >
+                {mt.openMap}
+              </Button>
+            </Box>
+          ))}
+        </DialogContent>
+        <DialogActions sx={{ p: 2, justifyContent: 'space-between' }}>
+          <Button onClick={() => setActiveModal(null)} sx={{ color: '#94D2BD' }}>
+            {mt.close}
+          </Button>
+          <Button
+            variant="contained"
+            onClick={() => handleAction('places')}
+            startIcon={<OpenInNew />}
+            sx={{
+              background: 'linear-gradient(135deg, #B8004F 0%, #6E002B 100%)',
+              color: '#FFD700',
+              fontWeight: 800,
+              border: '1px solid #FFD700'
+            }}
+          >
+            {mt.morePlacesInBot}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* ═══════════════════════════════════════════════════════════════════════════ */}
+      {/* 5. مودال اخبار دانشگاه و شهر */}
+      {/* ═══════════════════════════════════════════════════════════════════════════ */}
+      <Dialog
+        open={activeModal === 'news'}
+        onClose={() => setActiveModal(null)}
+        slotProps={{
+          paper: {
+            sx: {
+              background: 'linear-gradient(145deg, #072723 0%, #031715 100%)',
+              border: '1px solid rgba(255, 215, 0, 0.35)',
+              borderRadius: 4,
+              color: '#F0FDF4',
+              maxWidth: 480,
+              width: '95%',
+              p: 1
+            }
+          }
+        }}
+      >
+        <DialogTitle sx={{ color: '#FFD700', fontWeight: 900, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>{mt.newsTitle}</span>
+          <IconButton onClick={() => setActiveModal(null)} sx={{ color: '#94D2BD' }} size="small">
+            <Close />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, pt: 1 }}>
+          <Typography variant="body2" sx={{ color: '#94D2BD', fontSize: '0.82rem' }}>
+            {mt.newsDesc}
+          </Typography>
+
+          {[
+            { id: 1, title: 'انتشار فراخوان بورسیه استانی ADiSU Umbria برای سال تحصیلی جدید', date: '۲ روز پیش', tag: 'بورسیه' },
+            { id: 2, title: 'تمدید مهلت تخفیف اشتراک سالانه اتوبوس و مینی‌مترو دانشجویی', date: 'هفته گذشته', tag: 'حمل‌ونقل' },
+            { id: 3, title: 'آغاز دوره‌های رایگان آموزش زبان ایتالیایی در مرکز زبان دانشگاه (CLA)', date: 'جدید', tag: 'آموزش' }
+          ].map((n) => (
+            <Box
+              key={n.id}
+              sx={{
+                p: 1.5,
+                borderRadius: 2.5,
+                background: 'rgba(7, 39, 35, 0.6)',
+                border: '1px solid rgba(255, 215, 0, 0.15)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 0.5
+              }}
+            >
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography variant="subtitle2" sx={{ color: '#FFFFFF', fontWeight: 800 }}>
+                  {n.title}
+                </Typography>
+                <Chip size="small" label={n.tag} sx={{ background: 'rgba(184, 0, 79, 0.25)', color: '#FFD700', fontSize: '0.7rem' }} />
+              </Box>
+              <Typography variant="caption" sx={{ color: '#94D2BD' }}>
+                {n.date}
+              </Typography>
+            </Box>
+          ))}
+        </DialogContent>
+        <DialogActions sx={{ p: 2, justifyContent: 'space-between' }}>
+          <Button onClick={() => setActiveModal(null)} sx={{ color: '#94D2BD' }}>
+            {mt.close}
+          </Button>
+          <Button
+            variant="contained"
+            onClick={() => handleAction('news')}
+            startIcon={<OpenInNew />}
+            sx={{
+              background: 'linear-gradient(135deg, #B8004F 0%, #6E002B 100%)',
+              color: '#FFD700',
+              fontWeight: 800,
+              border: '1px solid #FFD700'
+            }}
+          >
+            {mt.openNewsInBot}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* ═══════════════════════════════════════════════════════════════════════════ */}
+      {/* 6. مودال مشاوره تخصصی */}
+      {/* ═══════════════════════════════════════════════════════════════════════════ */}
+      <Dialog
+        open={activeModal === 'consult'}
+        onClose={() => setActiveModal(null)}
+        slotProps={{
+          paper: {
+            sx: {
+              background: 'linear-gradient(145deg, #072723 0%, #031715 100%)',
+              border: '1px solid rgba(255, 215, 0, 0.35)',
+              borderRadius: 4,
+              color: '#F0FDF4',
+              maxWidth: 480,
+              width: '95%',
+              p: 1
+            }
+          }
+        }}
+      >
+        <DialogTitle sx={{ color: '#FFD700', fontWeight: 900, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>{mt.consultTitle}</span>
+          <IconButton onClick={() => setActiveModal(null)} sx={{ color: '#94D2BD' }} size="small">
+            <Close />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, pt: 1 }}>
+          <Typography variant="body2" sx={{ color: '#94D2BD', fontSize: '0.82rem' }}>
+            {mt.consultDesc}
+          </Typography>
+
+          {[
+            { id: 1, title: '🎓 پذیرش دانشگاهی و پیش‌ثبت‌نام Universitaly', desc: 'بررسی مدارک تحصیلی، ترجمه، رزومه و مکاتبه با اساتید' },
+            { id: 2, title: '💶 مدارک بورسیه استانی ADiSU و ISEE Parificato', desc: 'راهنمای آماده‌سازی فیش حقوقی، مدارک دارایی و تایید کنسولگری' },
+            { id: 3, title: '🛂 ویزای تحصیلی و تمدید پرمسو (Permesso)', desc: 'تکمیل کیت زرد پستی، وقت انگشت‌نگاری و بیمه درمانی SSN' },
+            { id: 4, title: '🏠 قرارداد اجاره، کد مالیاتی و حساب بانکی', desc: 'اخذ Codice Fiscale، ثبت قرارداد در آژانس مالیاتی و کارت بانکی' }
+          ].map((item) => (
+            <Box
+              key={item.id}
+              sx={{
+                p: 1.5,
+                borderRadius: 2.5,
+                background: 'rgba(7, 39, 35, 0.6)',
+                border: '1px solid rgba(255, 215, 0, 0.15)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 0.5
+              }}
+            >
+              <Typography variant="subtitle2" sx={{ color: '#FFFFFF', fontWeight: 800 }}>
+                {item.title}
+              </Typography>
+              <Typography variant="caption" sx={{ color: '#94D2BD', lineHeight: 1.5 }}>
+                {item.desc}
+              </Typography>
+            </Box>
+          ))}
+        </DialogContent>
+        <DialogActions sx={{ p: 2, justifyContent: 'space-between' }}>
+          <Button onClick={() => setActiveModal(null)} sx={{ color: '#94D2BD' }}>
+            {mt.close}
+          </Button>
+          <Button
+            variant="contained"
+            onClick={() => handleAction('consult')}
+            startIcon={<OpenInNew />}
+            sx={{
+              background: 'linear-gradient(135deg, #B8004F 0%, #6E002B 100%)',
+              color: '#FFD700',
+              fontWeight: 800,
+              border: '1px solid #FFD700'
+            }}
+          >
+            {mt.startConsultInBot}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Box sx={{ height: 20 }} />
       <style>{`

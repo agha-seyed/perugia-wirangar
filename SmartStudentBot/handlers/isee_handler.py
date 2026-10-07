@@ -19,10 +19,11 @@ from enum import Enum
 from dataclasses import dataclass, field
 
 try:
-    from handlers.cmd_start import get_user_lang, get_text
+    from handlers.cmd_start import get_user_lang, get_text, get_user_lang_code
 except ImportError:
     def get_user_lang(user_id: int) -> dict: return {}
     def get_text(lang: dict, key: str, default: str = "") -> str: return default
+    def get_user_lang_code(user_id: int) -> str: return "fa"
 
 
 router = Router()
@@ -249,18 +250,31 @@ class ISEEDataStore:
             db_user = await db_manager.get_user(user_id)
             if db_user and "isee" in db_user:
                 self.user_data[user_id]["history"] = db_user["isee"].get("history", [])
-                self.user_data[user_id]["settings"] = db_user["isee"].get("settings", self.user_data[user_id]["settings"])
+                saved_settings = db_user["isee"].get("settings", {})
+                if saved_settings:
+                    reg_val = saved_settings.get("region")
+                    if isinstance(reg_val, str):
+                        try:
+                            saved_settings["region"] = Region(reg_val)
+                        except Exception:
+                            saved_settings["region"] = Region.CENTRO
+                    self.user_data[user_id]["settings"].update(saved_settings)
         return self.user_data[user_id]
         
     async def save_user_to_db(self, user_id: int):
         from database import db_manager
         if user_id in self.user_data and db_manager.users is not None:
             try:
+                # سریالایز ایمن برای مونگو (تبدیل Enum به مقدار رشته‌ای)
+                user_settings = dict(self.user_data[user_id].get("settings", {}))
+                if isinstance(user_settings.get("region"), Region):
+                    user_settings["region"] = user_settings["region"].value
+                    
                 await db_manager.users.update_one(
                     {"telegram_id": user_id},
                     {"$set": {
                         "isee.history": self.user_data[user_id]["history"],
-                        "isee.settings": self.user_data[user_id]["settings"]
+                        "isee.settings": user_settings
                     }},
                     upsert=True
                 )
@@ -980,9 +994,85 @@ def get_reduction_tips() -> str:
 """
 
 
-def get_isee_parificato_info() -> str:
-    """اطلاعات ISEE Parificato برای دانشجویان غیر EU"""
-    return """
+def get_isee_parificato_info(lang_code: str = "fa") -> str:
+    """اطلاعات ISEE Parificato برای دانشجویان غیر EU به سه زبان"""
+    if lang_code == "it":
+        return """
+🌍 <b>Cos'è l'ISEE Parificato?</b>
+
+Per gli studenti universitari stranieri (extra-UE) non residenti fiscalmente in Italia, l'ISEE ordinario non può essere calcolato. È obbligatorio richiedere l'<b>ISEE Parificato</b> per l'accesso alla borsa di studio ADiSU e l'esonero dalle tasse.
+
+━━━━━━━━━━━━━━━━━━━━
+
+📋 <b>Documenti Necessari:</b>
+
+1️⃣ <b>Stato di famiglia</b> del Paese d'origine
+   (Tradotto e legalizzato dall'Ambasciata/Consolato)
+
+2️⃣ <b>Redditi percepiti dalla famiglia</b> nell'anno solare di riferimento
+   (Traduzione giurata + legalizzazione)
+
+3️⃣ <b>Patrimonio immobiliare e mobiliare</b> (saldo conti bancari e metri quadri delle proprietà)
+   (Traduzione giurata + legalizzazione)
+
+4️⃣ <b>Contratto d'affitto o titolo abitativo</b>
+
+━━━━━━━━━━━━━━━━━━━━
+
+🏢 <b>Dove si richiede?</b>
+Presso i centri di assistenza fiscale (CAF) convenzionati con ADiSU e l'Università a Perugia (es. CAF CGIL, CAF CISL, CAF ACLI).
+
+💰 <b>Costo approssimativo:</b>
+Circa 30 - 80 € (a seconda del CAF).
+
+⏱ <b>Tempi di rilascio:</b>
+Da 1 a 3 settimane lavorative.
+
+━━━━━━━━━━━━━━━━━━━━
+
+💡 <b>Consiglio importante:</b>
+Si raccomanda di prenotare l'appuntamento con largo anticipo presso i centri CAF di Perugia.
+"""
+    elif lang_code == "en":
+        return """
+🌍 <b>What is ISEE Parificato?</b>
+
+For non-EU international students without Italian tax residency, standard ISEE cannot be issued. You must obtain an <b>ISEE Parificato</b> to apply for the ADiSU regional scholarship and university tuition waivers.
+
+━━━━━━━━━━━━━━━━━━━━
+
+📋 <b>Required Documents:</b>
+
+1️⃣ <b>Family Status Certificate</b> from your home country
+   (Officially translated + legalized by Embassy/Consulate)
+
+2️⃣ <b>Family Income Statements</b> for the reference calendar year
+   (Certified translation + legalization)
+
+3️⃣ <b>Real Estate & Financial Assets</b> (property size in m², bank account balances)
+   (Certified translation + legalization)
+
+4️⃣ <b>Housing Lease Agreement or Property Deed</b>
+   (Certified translation)
+
+━━━━━━━━━━━━━━━━━━━━
+
+🏢 <b>Where is it issued?</b>
+Authorized CAF tax assistance offices in Italy (e.g., CAF CGIL, CAF CISL, CAF ACLI).
+
+💰 <b>Estimated Cost:</b>
+Around €30 to €80 (depending on the office).
+
+⏱ <b>Processing Time:</b>
+1 to 3 weeks.
+
+━━━━━━━━━━━━━━━━━━━━
+
+💡 <b>Important Tip:</b>
+Book your CAF appointment at least 2 weeks in advance once you arrive in Perugia.
+"""
+    else:
+        return """
 🌍 <b>ISEE Parificato چیست؟</b>
 
 برای دانشجویان غیر اروپایی (مثل ایرانی‌ها)، ISEE معمولی قابل صدور نیست.
@@ -1031,27 +1121,28 @@ def get_isee_parificato_info() -> str:
 @router.message(Command("isee"))
 @router.callback_query(F.data == "isee")
 async def start_isee_calculator(event: types.Message | types.CallbackQuery, state: FSMContext):
-    """نقطه ورود اصلی محاسبه‌گر ISEE"""
+    """نقطه ورود اصلی محاسبه‌گر ISEE به زبان کاربر"""
     user_id = event.from_user.id
+    lang_code = get_user_lang_code(user_id)
     
     # پاکسازی داده قبلی
     data_store.clear_current(user_id)
     await state.clear()
     
+    # متن انتظار بر اساس زبان
+    if lang_code == "it":
+        wait_text = "⏳ <b>Preparazione del calcolatore ISEE...</b>\n📡 Ricezione tassi di cambio e soglie DSU..."
+    elif lang_code == "en":
+        wait_text = "⏳ <b>Preparing ISEE Calculator...</b>\n📡 Fetching latest currency rates and DSU thresholds..."
+    else:
+        wait_text = "⏳ <b>در حال آماده‌سازی محاسبه‌گر...</b>\n📡 دریافت آخرین نرخ ارز..."
+
     # نمایش پیام انتظار
     if isinstance(event, types.CallbackQuery):
         await event.answer()
-        wait_msg = await event.message.edit_text(
-            "⏳ <b>در حال آماده‌سازی محاسبه‌گر...</b>\n"
-            "📡 دریافت آخرین نرخ ارز...",
-            parse_mode="HTML"
-        )
+        wait_msg = await event.message.edit_text(wait_text, parse_mode="HTML")
     else:
-        wait_msg = await event.answer(
-            "⏳ <b>در حال آماده‌سازی محاسبه‌گر...</b>\n"
-            "📡 دریافت آخرین نرخ ارز...",
-            parse_mode="HTML"
-        )
+        wait_msg = await event.answer(wait_text, parse_mode="HTML")
     
     # دریافت نرخ ارز
     eur_rate, is_live = await get_eur_rate()
@@ -1063,11 +1154,113 @@ async def start_isee_calculator(event: types.Message | types.CallbackQuery, stat
     user_input.created_at = datetime.now().strftime("%Y/%m/%d %H:%M")
     
     # وضعیت نرخ ارز
-    rate_status = "🟢 زنده" if is_live else "🟡 تقریبی"
-    
-    # ساخت متن خوش‌آمدگویی
-    text = f"""
-🧮 <b>محاسبه‌گر هوشمند ISEE 2025</b>
+    if lang_code == "it":
+        rate_status = "🟢 Aggiornato" if is_live else "🟡 Stimato"
+        text = f"""🧮 <b>Calcolatore Intelligente ISEE 2025</b>
+
+━━━━━━━━━━━━━━━━━━━━━━━━━
+💶 <b>Tasso di cambio:</b> {eur_rate:,} Toman ({rate_status})
+📅 <b>Anno Accademico:</b> 2025-2026
+━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📌 <b>Cos'è l'ISEE Parificato?</b>
+È l'indicatore economico per studenti internazionali che determina:
+
+   💰 Borsa di studio DSU (fino a 7.000€/anno)
+   🏠 Assegnazione posto alloggio
+   📉 Esonero totale o parziale dalle tasse universitarie
+   🍽 Tariffe agevolate per la mensa universitaria
+
+━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🎯 <b>Soglie di riferimento DSU:</b>
+
+🟢 Sotto <b>25.500€</b> → Borsa completa + Alloggio
+🟡 Tra 25.500€ e <b>36.000€</b> → Borsa parziale  
+🟠 Tra 36.000€ e <b>50.000€</b> → Sconto tasse universitarie
+🔴 Sopra 50.000€ → Nessuna agevolazione
+
+━━━━━━━━━━━━━━━━━━━━━━━━━
+"""
+        history = user.get("history", [])
+        if history:
+            last = history[-1]
+            status_emoji = STATUS_CONFIG.get(last.get("status", "none"), {}).get("color", "⚪")
+            text += f"\n📊 <b>Ultimo calcolo:</b> {status_emoji} {last['isee']:,.0f}€\n   📅 {last['date']}\n"
+
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="🚀 Calcolo Completo", callback_data="isee_mode_full"),
+                InlineKeyboardButton(text="⚡ Calcolo Rapido", callback_data="isee_mode_quick"),
+            ],
+            [
+                InlineKeyboardButton(text="📜 Cronologia", callback_data="isee_history"),
+                InlineKeyboardButton(text="💡 Consigli Utili", callback_data="isee_tips"),
+            ],
+            [
+                InlineKeyboardButton(text="🌍 ISEE Parificato", callback_data="isee_parificato"),
+                InlineKeyboardButton(text="⏰ Scadenze e Bando", callback_data="isee_deadline"),
+            ],
+            [
+                InlineKeyboardButton(text="🔙 Menu Principale", callback_data="main_menu"),
+            ]
+        ])
+
+    elif lang_code == "en":
+        rate_status = "🟢 Live" if is_live else "🟡 Estimated"
+        text = f"""🧮 <b>Smart ISEE Calculator 2025</b>
+
+━━━━━━━━━━━━━━━━━━━━━━━━━
+💶 <b>EUR Rate:</b> {eur_rate:,} Toman ({rate_status})
+📅 <b>Academic Year:</b> 2025-2026
+━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📌 <b>What is ISEE Parificato?</b>
+The economic indicator for international students that determines:
+
+   💰 DSU Scholarship (up to 7,000€/year)
+   🏠 Student Dormitory priority
+   📉 Tuition fee waivers and reductions
+   🍽 Reduced canteen (Mensa) rates
+
+━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🎯 <b>Key DSU Thresholds:</b>
+
+🟢 Below <b>25,500€</b> → Full Scholarship + Dormitory
+🟡 25,500€ to <b>36,000€</b> → Partial Scholarship  
+🟠 36,000€ to <b>50,000€</b> → Tuition Discount Only
+🔴 Above 50,000€ → No scholarship benefits
+
+━━━━━━━━━━━━━━━━━━━━━━━━━
+"""
+        history = user.get("history", [])
+        if history:
+            last = history[-1]
+            status_emoji = STATUS_CONFIG.get(last.get("status", "none"), {}).get("color", "⚪")
+            text += f"\n📊 <b>Last calculation:</b> {status_emoji} {last['isee']:,.0f}€\n   📅 {last['date']}\n"
+
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="🚀 Full Calculation", callback_data="isee_mode_full"),
+                InlineKeyboardButton(text="⚡ Quick Estimate", callback_data="isee_mode_quick"),
+            ],
+            [
+                InlineKeyboardButton(text="📜 History", callback_data="isee_history"),
+                InlineKeyboardButton(text="💡 Pro Tips", callback_data="isee_tips"),
+            ],
+            [
+                InlineKeyboardButton(text="🌍 ISEE Parificato Guide", callback_data="isee_parificato"),
+                InlineKeyboardButton(text="⏰ Deadlines", callback_data="isee_deadline"),
+            ],
+            [
+                InlineKeyboardButton(text="🔙 Main Menu", callback_data="main_menu"),
+            ]
+        ])
+
+    else:
+        rate_status = "🟢 زنده" if is_live else "🟡 تقریبی"
+        text = f"""🧮 <b>محاسبه‌گر هوشمند ISEE 2025</b>
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━
 💶 <b>نرخ یورو:</b> {eur_rate:,} تومان ({rate_status})
@@ -1094,33 +1287,29 @@ async def start_isee_calculator(event: types.Message | types.CallbackQuery, stat
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━
 """
-    
-    # نمایش آخرین محاسبه اگر وجود دارد
-    history = user.get("history", [])
-    if history:
-        last = history[-1]
-        status_emoji = STATUS_CONFIG.get(last.get("status", "none"), {}).get("color", "⚪")
-        text += f"\n📊 <b>آخرین محاسبه:</b> {status_emoji} {last['isee']:,.0f}€\n"
-        text += f"   📅 {last['date']}\n"
-    
-    # کیبورد اصلی
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="🚀 محاسبه کامل", callback_data="isee_mode_full"),
-            InlineKeyboardButton(text="⚡ محاسبه سریع", callback_data="isee_mode_quick"),
-        ],
-        [
-            InlineKeyboardButton(text="📜 تاریخچه", callback_data="isee_history"),
-            InlineKeyboardButton(text="💡 نکات طلایی", callback_data="isee_tips"),
-        ],
-        [
-            InlineKeyboardButton(text="🌍 ISEE Parificato", callback_data="isee_parificato"),
-            InlineKeyboardButton(text="⏰ یادآور ددلاین‌ها", callback_data="isee_deadline"),
-        ],
-        [
-            InlineKeyboardButton(text="🔙 منوی اصلی", callback_data="main_menu"),
-        ]
-    ])
+        history = user.get("history", [])
+        if history:
+            last = history[-1]
+            status_emoji = STATUS_CONFIG.get(last.get("status", "none"), {}).get("color", "⚪")
+            text += f"\n📊 <b>آخرین محاسبه:</b> {status_emoji} {last['isee']:,.0f}€\n   📅 {last['date']}\n"
+
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="🚀 محاسبه کامل", callback_data="isee_mode_full"),
+                InlineKeyboardButton(text="⚡ محاسبه سریع", callback_data="isee_mode_quick"),
+            ],
+            [
+                InlineKeyboardButton(text="📜 تاریخچه", callback_data="isee_history"),
+                InlineKeyboardButton(text="💡 نکات طلایی", callback_data="isee_tips"),
+            ],
+            [
+                InlineKeyboardButton(text="🌍 ISEE Parificato", callback_data="isee_parificato"),
+                InlineKeyboardButton(text="⏰ یادآور ددلاین‌ها", callback_data="isee_deadline"),
+            ],
+            [
+                InlineKeyboardButton(text="🔙 منوی اصلی", callback_data="main_menu"),
+            ]
+        ])
     
     await wait_msg.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
     await state.set_state(ISEEState.intro)
@@ -1132,13 +1321,72 @@ async def start_isee_calculator(event: types.Message | types.CallbackQuery, stat
 
 @router.callback_query(F.data == "isee_mode_full")
 async def select_full_mode(callback: types.CallbackQuery, state: FSMContext):
-    """انتخاب حالت محاسبه کامل"""
+    """انتخاب حالت محاسبه کامل چندزبانه"""
     user_id = callback.from_user.id
+    lang_code = get_user_lang_code(user_id)
     user = await data_store.get_user(user_id)
     user["settings"]["mode"] = "full"
     
-    text = """
-📋 <b>حالت محاسبه کامل</b>
+    if lang_code == "it":
+        text = """📋 <b>Calcolo ISEE Completo</b>
+
+In questa modalità verranno considerati tutti i parametri:
+
+✅ Reddito annuale del nucleo familiare
+✅ Situazione abitativa (Affitto / Proprietà)
+✅ Numero componenti del nucleo familiare
+✅ Patrimonio immobiliare
+✅ Patrimonio mobiliare (conti bancari, depositi)
+✅ Mutui o debiti residui
+✅ Beni posseduti all'estero
+✅ Requisiti di studente indipendente
+
+━━━━━━━━━━━━━━━━━━━━━━━━━
+⏱ <b>Tempo stimato:</b> 3-5 minuti
+🎯 <b>Accuratezza:</b> Elevata (conforme DPCM 159/2013)
+━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🗺 <b>Seleziona l'area geografica dell'università:</b>
+<i>(Le soglie DSU variano leggermente per regione)</i>
+"""
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏔 Nord Italia", callback_data="isee_region_nord")],
+            [InlineKeyboardButton(text="🏛 Centro Italia (es. Perugia/Umbria)", callback_data="isee_region_centro")],
+            [InlineKeyboardButton(text="🌊 Sud Italia e Isole", callback_data="isee_region_sud")],
+            [InlineKeyboardButton(text="❓ Non sono sicuro (Standard)", callback_data="isee_region_default")],
+            [InlineKeyboardButton(text="🔙 Indietro", callback_data="isee")]
+        ])
+    elif lang_code == "en":
+        text = """📋 <b>Full ISEE Calculation Mode</b>
+
+This mode calculates all official economic factors:
+
+✅ Annual family income
+✅ Housing status (Rented / Owned home)
+✅ Family scale and household members
+✅ Real estate assets
+✅ Financial assets (Bank accounts, savings)
+✅ Outstanding mortgages and debts
+✅ Assets held outside Italy
+✅ Independent student status
+
+━━━━━━━━━━━━━━━━━━━━━━━━━
+⏱ <b>Estimated time:</b> 3-5 minutes
+🎯 <b>Accuracy:</b> High (Based on DPCM 159/2013)
+━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🗺 <b>Select your university's region:</b>
+<i>(Regional DSU thresholds vary slightly)</i>
+"""
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏔 Northern Italy", callback_data="isee_region_nord")],
+            [InlineKeyboardButton(text="🏛 Central Italy (e.g. Perugia)", callback_data="isee_region_centro")],
+            [InlineKeyboardButton(text="🌊 Southern Italy", callback_data="isee_region_sud")],
+            [InlineKeyboardButton(text="❓ Not sure (Default)", callback_data="isee_region_default")],
+            [InlineKeyboardButton(text="🔙 Back", callback_data="isee")]
+        ])
+    else:
+        text = """📋 <b>حالت محاسبه کامل</b>
 
 در این حالت تمام پارامترها پرسیده می‌شود:
 
@@ -1152,33 +1400,20 @@ async def select_full_mode(callback: types.CallbackQuery, state: FSMContext):
 ✅ وضعیت استقلال دانشجو
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━
-
 ⏱ <b>زمان تقریبی:</b> ۳-۵ دقیقه
 🎯 <b>دقت:</b> بالا (نزدیک به ISEE واقعی)
-
 ━━━━━━━━━━━━━━━━━━━━━━━━━
 
 🗺 <b>ابتدا منطقه دانشگاه را انتخاب کنید:</b>
 <i>(آستانه‌های بورسیه بر اساس منطقه متفاوت است)</i>
 """
-    
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="🏔 شمال ایتالیا", callback_data="isee_region_nord"),
-        ],
-        [
-            InlineKeyboardButton(text="🏛 مرکز ایتالیا", callback_data="isee_region_centro"),
-        ],
-        [
-            InlineKeyboardButton(text="🌊 جنوب ایتالیا", callback_data="isee_region_sud"),
-        ],
-        [
-            InlineKeyboardButton(text="❓ نمی‌دانم", callback_data="isee_region_default"),
-        ],
-        [
-            InlineKeyboardButton(text="🔙 بازگشت", callback_data="isee"),
-        ]
-    ])
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏔 شمال ایتالیا", callback_data="isee_region_nord")],
+            [InlineKeyboardButton(text="🏛 مرکز ایتالیا (پروجا)", callback_data="isee_region_centro")],
+            [InlineKeyboardButton(text="🌊 جنوب ایتالیا", callback_data="isee_region_sud")],
+            [InlineKeyboardButton(text="❓ نمی‌دانم (پیش‌فرض)", callback_data="isee_region_default")],
+            [InlineKeyboardButton(text="🔙 بازگشت", callback_data="isee")]
+        ])
     
     await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
     await state.set_state(ISEEState.select_region)
@@ -1186,13 +1421,64 @@ async def select_full_mode(callback: types.CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "isee_mode_quick")
 async def select_quick_mode(callback: types.CallbackQuery, state: FSMContext):
-    """انتخاب حالت محاسبه سریع"""
+    """انتخاب حالت محاسبه سریع چندزبانه"""
     user_id = callback.from_user.id
+    lang_code = get_user_lang_code(user_id)
     user = await data_store.get_user(user_id)
     user["settings"]["mode"] = "quick"
     
-    text = """
-⚡ <b>حالت محاسبه سریع</b>
+    if lang_code == "it":
+        text = """⚡ <b>Calcolo Rapido ISEE</b>
+
+Solo 3 domande essenziali per una stima immediata:
+
+1️⃣ Reddito familiare annuo
+2️⃣ Numero componenti familiari
+3️⃣ Patrimonio stimato (casa + risparmi)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━
+⏱ <b>Tempo:</b> ~1 minuto
+⚠️ <b>Accuratezza:</b> Stima prudente
+━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🗺 <b>Seleziona la regione:</b>
+"""
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="🏔 Nord", callback_data="isee_region_nord"),
+                InlineKeyboardButton(text="🏛 Centro", callback_data="isee_region_centro"),
+                InlineKeyboardButton(text="🌊 Sud", callback_data="isee_region_sud"),
+            ],
+            [InlineKeyboardButton(text="❓ Predefinito (Perugia/Centro)", callback_data="isee_region_default")],
+            [InlineKeyboardButton(text="🔙 Indietro", callback_data="isee")]
+        ])
+    elif lang_code == "en":
+        text = """⚡ <b>Quick ISEE Estimate</b>
+
+Only 3 main questions for a fast check:
+
+1️⃣ Annual family income
+2️⃣ Family member count
+3️⃣ Total assets (Property + Savings)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━
+⏱ <b>Time:</b> ~1 minute
+⚠️ <b>Accuracy:</b> Estimated approximation
+━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🗺 <b>Select your region:</b>
+"""
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="🏔 North", callback_data="isee_region_nord"),
+                InlineKeyboardButton(text="🏛 Center", callback_data="isee_region_centro"),
+                InlineKeyboardButton(text="🌊 South", callback_data="isee_region_sud"),
+            ],
+            [InlineKeyboardButton(text="❓ Default (Perugia/Central)", callback_data="isee_region_default")],
+            [InlineKeyboardButton(text="🔙 Back", callback_data="isee")]
+        ])
+    else:
+        text = """⚡ <b>حالت محاسبه سریع</b>
 
 در این حالت فقط ۳ سؤال اصلی پرسیده می‌شود:
 
@@ -1201,34 +1487,21 @@ async def select_quick_mode(callback: types.CallbackQuery, state: FSMContext):
 3️⃣ مجموع دارایی‌ها (ملک + پس‌انداز)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━
-
 ⏱ <b>زمان تقریبی:</b> ۱ دقیقه
 ⚠️ <b>دقت:</b> تخمینی (محافظه‌کارانه)
-
-━━━━━━━━━━━━━━━━━━━━━━━━━
-
-💡 <b>نکته:</b>
-این حالت برای تخمین اولیه مناسب است.
-برای نتیجه دقیق‌تر از حالت کامل استفاده کنید.
-
 ━━━━━━━━━━━━━━━━━━━━━━━━━
 
 🗺 <b>منطقه دانشگاه را انتخاب کنید:</b>
 """
-    
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="🏔 شمال", callback_data="isee_region_nord"),
-            InlineKeyboardButton(text="🏛 مرکز", callback_data="isee_region_centro"),
-            InlineKeyboardButton(text="🌊 جنوب", callback_data="isee_region_sud"),
-        ],
-        [
-            InlineKeyboardButton(text="❓ نمی‌دانم (پیش‌فرض)", callback_data="isee_region_default"),
-        ],
-        [
-            InlineKeyboardButton(text="🔙 بازگشت", callback_data="isee"),
-        ]
-    ])
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="🏔 شمال", callback_data="isee_region_nord"),
+                InlineKeyboardButton(text="🏛 مرکز", callback_data="isee_region_centro"),
+                InlineKeyboardButton(text="🌊 جنوب", callback_data="isee_region_sud"),
+            ],
+            [InlineKeyboardButton(text="❓ نمی‌دانم (پیش‌فرض)", callback_data="isee_region_default")],
+            [InlineKeyboardButton(text="🔙 بازگشت", callback_data="isee")]
+        ])
     
     await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
     await state.set_state(ISEEState.select_region)
@@ -1453,29 +1726,119 @@ async def show_tips(callback: types.CallbackQuery):
 @router.callback_query(F.data == "isee_parificato")
 async def show_parificato_info(callback: types.CallbackQuery):
     """نمایش اطلاعات ISEE Parificato"""
+    user_id = callback.from_user.id
+    lang = get_user_lang_code(user_id)
+    text = get_isee_parificato_info(lang)
     
-    text = get_isee_parificato_info()
-    
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="📋 لیست CAF های معتبر", callback_data="isee_caf_list"),
-        ],
-        [
-            InlineKeyboardButton(text="🚀 شروع محاسبه", callback_data="isee_mode_full"),
-        ],
-        [
-            InlineKeyboardButton(text="🔙 بازگشت", callback_data="isee"),
-        ]
-    ])
+    if lang == "it":
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📋 Centri CAF Consigliati", callback_data="isee_caf_list")],
+            [InlineKeyboardButton(text="🚀 Avvia Simulazione", callback_data="isee_mode_full")],
+            [InlineKeyboardButton(text="🔙 Indietro", callback_data="isee")]
+        ])
+    elif lang == "en":
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📋 Recommended CAF Offices", callback_data="isee_caf_list")],
+            [InlineKeyboardButton(text="🚀 Start Calculation", callback_data="isee_mode_full")],
+            [InlineKeyboardButton(text="🔙 Back", callback_data="isee")]
+        ])
+    else:
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📋 لیست CAF های معتبر", callback_data="isee_caf_list")],
+            [InlineKeyboardButton(text="🚀 شروع محاسبه", callback_data="isee_mode_full")],
+            [InlineKeyboardButton(text="🔙 بازگشت", callback_data="isee")]
+        ])
     
     await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
 
 
 @router.callback_query(F.data == "isee_caf_list")
 async def show_caf_list(callback: types.CallbackQuery):
-    """لیست CAF های پیشنهادی"""
+    """لیست CAF های پیشنهادی به سه زبان"""
+    user_id = callback.from_user.id
+    lang = get_user_lang_code(user_id)
     
-    text = """
+    if lang == "it":
+        text = """
+🏢 <b>Elenco dei Centri CAF Consigliati per ISEE Parificato</b>
+
+━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔵 <b>CAF CGIL</b>
+   La più grande rete CAF in Italia
+   🌐 www.cafcgil.it
+   ✅ Ampia esperienza con studenti internazionali
+
+🟢 <b>CAF CISL</b>
+   Rete diffusa in tutta Italia
+   🌐 www.cafcisl.it
+   ✅ Servizi online disponibili
+
+🟡 <b>CAF UIL</b>
+   🌐 www.cafuil.it
+   ✅ Costi vantaggiosi
+
+🔴 <b>CAF ACLI</b>
+   🌐 www.acli.it
+   ✅ Presenza capillare sul territorio
+
+━━━━━━━━━━━━━━━━━━━━━━━━━
+
+💡 <b>Consigli Utili:</b>
+
+• Prenota sempre l'appuntamento con 1-2 settimane di anticipo
+• Porta tutti i documenti già tradotti e legalizzati
+• Rivolgiti a una sede a Perugia o in città universitarie
+• Informati sul costo prima dell'appuntamento
+
+━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📞 <b>Frase utile da chiedere prima della prenotazione:</b>
+<i>"Fate ISEE Parificato per studenti universitari stranieri?"</i>
+"""
+        back_text = "🔙 Indietro"
+    elif lang == "en":
+        text = """
+🏢 <b>Recommended CAF Offices for ISEE Parificato</b>
+
+━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔵 <b>CAF CGIL</b>
+   Largest CAF network in Italy
+   🌐 www.cafcgil.it
+   ✅ Extensive experience with international students
+
+🟢 <b>CAF CISL</b>
+   Widespread presence across Italy
+   🌐 www.cafcisl.it
+   ✅ Online booking and services
+
+🟡 <b>CAF UIL</b>
+   🌐 www.cafuil.it
+   ✅ Affordable pricing
+
+🔴 <b>CAF ACLI</b>
+   🌐 www.acli.it
+   ✅ Convenient branch network
+
+━━━━━━━━━━━━━━━━━━━━━━━━━
+
+💡 <b>Important Advice:</b>
+
+• Always book your appointment 1-2 weeks in advance
+• Bring all legalized and translated documents
+• Prefer CAF branches located in university cities like Perugia
+• Ask about fees before your visit
+
+━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📞 <b>Question to ask when calling:</b>
+<i>"Fate ISEE Parificato per studenti universitari stranieri?"</i>
+(Do you process ISEE Parificato for foreign students?)
+"""
+        back_text = "🔙 Back"
+    else:
+        text = """
 🏢 <b>لیست CAF های پیشنهادی برای ISEE Parificato</b>
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1513,11 +1876,10 @@ async def show_caf_list(callback: types.CallbackQuery):
 "Fate ISEE Parificato per studenti stranieri?"
 (آیا برای دانشجویان خارجی ISEE Parificato صادر می‌کنید؟)
 """
+        back_text = "🔙 بازگشت"
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="🔙 بازگشت", callback_data="isee_parificato"),
-        ]
+        [InlineKeyboardButton(text=back_text, callback_data="isee_parificato")]
     ])
     
     await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
@@ -1531,15 +1893,17 @@ async def show_caf_list(callback: types.CallbackQuery):
 async def cancel_calculation(callback: types.CallbackQuery, state: FSMContext):
     """لغو محاسبه و بازگشت به منوی ISEE"""
     user_id = callback.from_user.id
+    lang = get_user_lang_code(user_id)
     
     # پاکسازی
     data_store.clear_current(user_id)
     await state.clear()
     
     # حذف کیبورد reply اگر وجود دارد
+    cancel_msg = "❌ Calcolo annullato." if lang == "it" else "❌ Calculation cancelled." if lang == "en" else "❌ محاسبه لغو شد."
     try:
         await callback.message.answer(
-            "❌ محاسبه لغو شد.",
+            cancel_msg,
             reply_markup=ReplyKeyboardRemove()
         )
     except:
@@ -3747,14 +4111,115 @@ async def send_final_report(
     user: dict,
     thresholds: ISEEThresholds
 ):
-    """ارسال گزارش نهایی محاسبه ISEE"""
+    """ارسال گزارش نهایی محاسبه ISEE به زبان کاربر"""
+    user_id = user.get("id") or (message.from_user.id if message.from_user else message.chat.id)
+    lang_code = get_user_lang_code(user_id)
     
     isee = result.isee
     status = result.status
     config = STATUS_CONFIG.get(status, STATUS_CONFIG["none"])
     
-    # ═══ بخش ۱: هدر و نتیجه اصلی ═══
-    report = f"""
+    if lang_code == "it":
+        status_titles = {
+            "full": "🟢 Idoneo Borsa Completa + Alloggio",
+            "partial": "🟡 Idoneo Borsa Parziale",
+            "reduced": "🟠 Solo Riduzione Tasse",
+            "none": "🔴 Nessuna Agevolazione",
+        }
+        status_title = status_titles.get(status, config['title'])
+        report = f"""{config['emoji']} <b>Report Ufficiale Calcolo ISEE 2025</b>
+{'━' * 28}
+
+🎯 <b>Valore ISEE Stimato:</b>
+
+   <code>  {isee:,.2f} €  </code>
+
+{config['bar']}
+
+🏆 <b>Esito Valutazione:</b> {status_title}
+{'━' * 28}
+"""
+        report += "\n📋 <b>Le tue agevolazioni universitarie:</b>\n\n"
+        if status == "full":
+            report += "✅ Esonero totale dalle tasse universitarie UniPG\n"
+            report += "✅ Borsa di studio economica DSU (fino a 7.000€/anno)\n"
+            report += "✅ Massima priorità per alloggio nei collegi ADiSU\n"
+            report += "✅ Mensa a tariffa gratuita o fortemente agevolata\n"
+        elif status == "partial":
+            report += "✅ Riduzione significativa delle tasse universitarie (30-70%)\n"
+            report += "✅ Buone possibilità di alloggio studentesco\n"
+            report += "✅ Mensa universitaria a tariffa ridotta\n"
+        elif status == "reduced":
+            report += "✅ Riduzione parziale delle rate universitarie\n"
+            report += "⚠️ Quota borsa in denaro limitata o non disponibile\n"
+        else:
+            report += "❌ Tasse universitarie piene (Fascia massima)\n"
+            report += "❌ Nessuna priorità alloggio DSU\n"
+
+        report += f"\n{'━' * 28}\n"
+        report += f"💶 <b>Tasso di cambio:</b> {inputs.eur_rate:,} Toman = 1€\n"
+        report += f"📅 <b>Data:</b> {datetime.now().strftime('%d/%m/%Y %H:%M')}\n"
+        report += f"⚠️ <i>Stima indicativa. Il documento legale definitivo è emesso dal CAF convenzionato in Italia.</i>\n"
+
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📄 Scarica Report PDF", callback_data="isee_get_pdf")],
+            [InlineKeyboardButton(text="🔄 Ricalcola", callback_data="isee_mode_full"), InlineKeyboardButton(text="💡 Consigli", callback_data="isee_tips")],
+            [InlineKeyboardButton(text="📜 Cronologia", callback_data="isee_history")],
+            [InlineKeyboardButton(text="🏠 Menu Principale", callback_data="main_menu")],
+        ])
+
+    elif lang_code == "en":
+        status_titles = {
+            "full": "🟢 Eligible for Full Scholarship & Housing",
+            "partial": "🟡 Eligible for Partial Scholarship",
+            "reduced": "🟠 Tuition Fee Discount Only",
+            "none": "🔴 No Scholarship Benefits",
+        }
+        status_title = status_titles.get(status, config['title'])
+        report = f"""{config['emoji']} <b>Official ISEE Calculation Report 2025</b>
+{'━' * 28}
+
+🎯 <b>Estimated ISEE Value:</b>
+
+   <code>  {isee:,.2f} €  </code>
+
+{config['bar']}
+
+🏆 <b>Assessment Result:</b> {status_title}
+{'━' * 28}
+"""
+        report += "\n📋 <b>Your Eligible University Benefits:</b>\n\n"
+        if status == "full":
+            report += "✅ 100% University Tuition Fee Waiver\n"
+            report += "✅ DSU Financial Grant (up to ~7,000€/year)\n"
+            report += "✅ High priority for ADiSU student dormitories\n"
+            report += "✅ Free or lowest-tier university Mensa meal card\n"
+        elif status == "partial":
+            report += "✅ Substantial tuition fee reduction (30-70%)\n"
+            report += "✅ Moderate chance for student housing\n"
+            report += "✅ Reduced canteen meal prices\n"
+        elif status == "reduced":
+            report += "✅ Partial tuition fee reduction (10-30%)\n"
+            report += "⚠️ No direct cash grant\n"
+        else:
+            report += "❌ Full university tuition fee applies\n"
+            report += "❌ No subsidized student accommodation\n"
+
+        report += f"\n{'━' * 28}\n"
+        report += f"💶 <b>Exchange Rate:</b> {inputs.eur_rate:,} Toman = 1€\n"
+        report += f"📅 <b>Date:</b> {datetime.now().strftime('%d/%m/%Y %H:%M')}\n"
+        report += f"⚠️ <i>Estimated calculation based on DSU formulas. The official ISEE Parificato is issued by authorized CAF offices in Italy.</i>\n"
+
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📄 Download PDF Report", callback_data="isee_get_pdf")],
+            [InlineKeyboardButton(text="🔄 Recalculate", callback_data="isee_mode_full"), InlineKeyboardButton(text="💡 Pro Tips", callback_data="isee_tips")],
+            [InlineKeyboardButton(text="📜 History", callback_data="isee_history")],
+            [InlineKeyboardButton(text="🏠 Main Menu", callback_data="main_menu")],
+        ])
+
+    else:
+        # فارسی (پیش‌فرض)
+        report = f"""
 {config['emoji']} <b>گزارش محاسبه ISEE</b>
 {'━' * 28}
 
@@ -3768,74 +4233,66 @@ async def send_final_report(
 
 {'━' * 28}
 """
-    
-    # ═══ بخش ۲: مزایا ═══
-    report += "\n📋 <b>مزایای شما:</b>\n\n"
-    
-    benefits_map = {
-        "full": [
-            "✅ معافیت کامل از شهریه دانشگاه",
-            "✅ دریافت کمک‌هزینه تحصیلی (~۷,۰۰۰€/سال)",
-            "✅ اولویت بالا برای خوابگاه دولتی",
-            "✅ کارت غذای رایگان یا خیلی ارزان (Mensa)",
-            "✅ تخفیف حمل‌ونقل عمومی",
-        ],
-        "partial": [
-            "✅ تخفیف قابل توجه در شهریه (۳۰-۷۰٪)",
-            "✅ شانس متوسط برای خوابگاه",
-            "✅ کارت غذا با قیمت کاهش‌یافته",
-            "⚠️ کمک‌هزینه نقدی کمتر یا بدون آن",
-        ],
-        "reduced": [
-            "✅ تخفیف جزئی در شهریه (۱۰-۳۰٪)",
-            "⚠️ احتمال کم برای خوابگاه دولتی",
-            "⚠️ بدون کمک‌هزینه نقدی",
-            "💡 پیشنهاد: راهکارهای کاهش ISEE را ببینید",
-        ],
-        "none": [
-            "❌ شهریه کامل دانشگاه",
-            "❌ خوابگاه دولتی در دسترس نیست",
-            "❌ بدون کمک‌هزینه و تخفیف",
-            "💡 نگران نباشید! راهکارهایی وجود دارد",
-        ],
-    }
-    
-    for benefit in benefits_map.get(status, []):
-        report += f"{benefit}\n"
-    
-    # ═══ بخش ۳: مقایسه با آستانه‌ها ═══
-    report += f"""
+        report += "\n📋 <b>مزایای شما:</b>\n\n"
+        benefits_map = {
+            "full": [
+                "✅ معافیت کامل از شهریه دانشگاه",
+                "✅ دریافت کمک‌هزینه تحصیلی (~۷,۰۰۰€/سال)",
+                "✅ اولویت بالا برای خوابگاه دولتی",
+                "✅ کارت غذای رایگان یا خیلی ارزان (Mensa)",
+                "✅ تخفیف حمل‌ونقل عمومی",
+            ],
+            "partial": [
+                "✅ تخفیف قابل توجه در شهریه (۳۰-۷۰٪)",
+                "✅ شانس متوسط برای خوابگاه",
+                "✅ کارت غذا با قیمت کاهش‌یافته",
+                "⚠️ کمک‌هزینه نقدی کمتر یا بدون آن",
+            ],
+            "reduced": [
+                "✅ تخفیف جزئی در شهریه (۱۰-۳۰٪)",
+                "⚠️ احتمال کم برای خوابگاه دولتی",
+                "⚠️ بدون کمک‌هزینه نقدی",
+                "💡 پیشنهاد: راهکارهای کاهش ISEE را ببینید",
+            ],
+            "none": [
+                "❌ شهریه کامل دانشگاه",
+                "❌ خوابگاه دولتی در دسترس نیست",
+                "❌ بدون کمک‌هزینه و تخفیف",
+                "💡 نگران نباشید! راهکارهایی وجود دارد",
+            ],
+        }
+        for benefit in benefits_map.get(status, []):
+            report += f"{benefit}\n"
+
+        report += f"""
 {'━' * 28}
 
 🎯 <b>فاصله تا آستانه‌ها:</b>
 
 """
-    
-    if isee <= thresholds.full_scholarship:
-        diff = thresholds.full_scholarship - isee
-        report += f"🟢 بورسیه کامل: <b>{diff:,.0f}€</b> زیر سقف ✓\n"
-    else:
-        diff = isee - thresholds.full_scholarship
-        report += f"🟢 بورسیه کامل: <b>{diff:,.0f}€</b> بالای سقف ✗\n"
-    
-    if isee <= thresholds.partial_scholarship:
-        diff = thresholds.partial_scholarship - isee
-        report += f"🟡 بورسیه جزئی: <b>{diff:,.0f}€</b> زیر سقف ✓\n"
-    else:
-        diff = isee - thresholds.partial_scholarship
-        report += f"🟡 بورسیه جزئی: <b>{diff:,.0f}€</b> بالای سقف ✗\n"
-    
-    if isee <= thresholds.reduced_fee:
-        diff = thresholds.reduced_fee - isee
-        report += f"🟠 تخفیف شهریه: <b>{diff:,.0f}€</b> زیر سقف ✓\n"
-    else:
-        diff = isee - thresholds.reduced_fee
-        report += f"🟠 تخفیف شهریه: <b>{diff:,.0f}€</b> بالای سقف ✗\n"
-    
-    # ═══ بخش ۴: مقایسه با ایرانی‌ها ═══
-    comparison = get_comparison_text(isee)
-    
-    report += f"""
+        if isee <= thresholds.full_scholarship:
+            diff = thresholds.full_scholarship - isee
+            report += f"🟢 بورسیه کامل: <b>{diff:,.0f}€</b> زیر سقف ✓\n"
+        else:
+            diff = isee - thresholds.full_scholarship
+            report += f"🟢 بورسیه کامل: <b>{diff:,.0f}€</b> بالای سقف ✗\n"
+        
+        if isee <= thresholds.partial_scholarship:
+            diff = thresholds.partial_scholarship - isee
+            report += f"🟡 بورسیه جزئی: <b>{diff:,.0f}€</b> زیر سقف ✓\n"
+        else:
+            diff = isee - thresholds.partial_scholarship
+            report += f"🟡 بورسیه جزئی: <b>{diff:,.0f}€</b> بالای سقف ✗\n"
+        
+        if isee <= thresholds.reduced_fee:
+            diff = thresholds.reduced_fee - isee
+            report += f"🟠 تخفیف شهریه: <b>{diff:,.0f}€</b> زیر سقف ✓\n"
+        else:
+            diff = isee - thresholds.reduced_fee
+            report += f"🟠 تخفیف شهریه: <b>{diff:,.0f}€</b> بالای سقف ✗\n"
+
+        comparison = get_comparison_text(isee)
+        report += f"""
 {'━' * 28}
 
 🇮🇷 <b>مقایسه با دانشجویان ایرانی:</b>
@@ -3845,11 +4302,18 @@ async def send_final_report(
 📊 میانگین: {IRANIAN_STATS['average']:,}€
 📊 میانه: {IRANIAN_STATS['median']:,}€
 
-"""
-    
-    # ═══ بخش ۵: جزئیات محاسبه ═══
-    report += f"""
 {'━' * 28}
+💶 <b>نرخ تبدیل:</b> {inputs.eur_rate:,} تومان = 1€
+📅 <b>تاریخ:</b> {datetime.now().strftime('%Y/%m/%d %H:%M')}
+⚠️ <i>این محاسبه تخمینی است. ISEE رسمی توسط CAF در ایتالیا صادر می‌شود.</i>
+"""
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📄 دریافت کارنامه رسمی PDF", callback_data="isee_get_pdf")],
+            [InlineKeyboardButton(text="🔄 محاسبه مجدد", callback_data="isee_mode_full"), InlineKeyboardButton(text="💡 راهکار کاهش", callback_data="isee_tips")],
+            [InlineKeyboardButton(text="🎯 محاسبه‌گر معکوس", callback_data="isee_reverse_intro")],
+            [InlineKeyboardButton(text="📜 تاریخچه", callback_data="isee_history")],
+            [InlineKeyboardButton(text="🏠 منوی اصلی", callback_data="main_menu")],
+        ])
 
 🔢 <b>جزئیات محاسبه:</b>
 

@@ -67,7 +67,7 @@ async def get_current_webapp_user(init_data: str = Security(api_key_header)) -> 
     """
     # در محیط لوکال/تست برای سهولت توسعه می‌توان اعتبارسنجی را دور زد (اختیاری)
     if settings.IS_LOCAL and not init_data:
-        return {"user": {"id": 123456, "first_name": "Test User"}}
+        return {"id": 123456, "first_name": "Test User", "username": "test_student"}
         
     data = verify_telegram_webapp_data(init_data)
     user_data = data.get("user")

@@ -46,7 +46,18 @@ bot = Bot(
     )
 )
 
-dp = Dispatcher(storage=MemoryStorage())
+# ایجاد منبع ذخیره‌سازی FSM با پشتیبانی از Redis و فال‌بک حافظه
+fsm_storage = MemoryStorage()
+if getattr(settings, "REDIS_URL", None):
+    try:
+        from aiogram.fsm.storage.redis import RedisStorage
+        fsm_storage = RedisStorage.from_url(settings.REDIS_URL)
+        logger.info(f"🔄 Initialized RedisStorage for FSM: {settings.REDIS_URL}")
+    except Exception as e:
+        logger.warning(f"⚠️ Redis is not accessible ({e}). Running FSM with MemoryStorage fallback.")
+        fsm_storage = MemoryStorage()
+
+dp = Dispatcher(storage=fsm_storage)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

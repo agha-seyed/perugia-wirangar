@@ -315,8 +315,13 @@ export default function RoommateView() {
                   variant="outlined"
                   startIcon={<Message />}
                   onClick={() => {
+                    const tg = (window as any).Telegram?.WebApp;
                     const username = ad.contact.replace('@', '');
-                    window.open(`https://t.me/${username}`, '_blank');
+                    if (tg?.openTelegramLink) {
+                      tg.openTelegramLink(`https://t.me/${username}`);
+                    } else {
+                      window.open(`https://t.me/${username}`, '_blank');
+                    }
                   }}
                   sx={{
                     borderColor: 'rgba(184, 0, 79, 0.7)',

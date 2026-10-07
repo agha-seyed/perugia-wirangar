@@ -23,7 +23,8 @@ from typing import Dict, Optional, Union, List
 from contextlib import suppress
 
 from aiogram import Router, F, types
-from aiogram.filters import CommandStart, Command
+from aiogram.filters import CommandStart, Command, CommandObject
+from aiogram.fsm.context import FSMContext
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message, CallbackQuery, WebAppInfo
 from aiogram.exceptions import TelegramBadRequest
 
@@ -118,14 +119,34 @@ def get_user_lang(user_id: int) -> dict:
 
 def get_user_lang_code(user_id: int) -> str:
     """
-    دریافت فقط کد زبان کاربر
+    دریافت فقط کد زبان کاربر از کش
     """
     return _user_languages.get(user_id, DEFAULT_LANGUAGE)
 
 
+async def get_user_lang_code_async(user_id: int) -> str:
+    """
+    دریافت مطمئن کد زبان کاربر همراه با فال‌بک دیتابیس MongoDB
+    """
+    if user_id in _user_languages:
+        return _user_languages[user_id]
+    
+    try:
+        from database import db_manager
+        db_user = await db_manager.get_user(user_id)
+        if db_user and db_user.get("language") in SUPPORTED_LANGUAGES:
+            lang_code = db_user["language"]
+            _user_languages[user_id] = lang_code
+            return lang_code
+    except Exception as e:
+        logger.debug(f"Error fetching user lang from db: {e}")
+        
+    return DEFAULT_LANGUAGE
+
+
 def set_user_lang(user_id: int, lang_code: str) -> None:
     """
-    تنظیم زبان کاربر
+    تنظیم زبان کاربر در کش
     """
     if lang_code in SUPPORTED_LANGUAGES:
         _user_languages[user_id] = lang_code
@@ -285,24 +306,103 @@ def get_back_button(lang: dict) -> InlineKeyboardMarkup:
 # بخش ۵: هندلرها (Handlers)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+async def route_start_action(message: Message, action: str, state: FSMContext = None) -> bool:
+    """هدایت مستقیم کاربر به ماژول درخواستی از طریق دیپ‌لینک یا مینی‌اپلیکیشن"""
+    action = action.lower().strip()
+    try:
+        if action == "isee":
+            from handlers.isee_handler import start_isee_calculator
+            await start_isee_calculator(message, state)
+            return True
+        elif action == "market":
+            from handlers.market_handler import show_market
+            await show_market(message, state)
+            return True
+        elif action in ("roommate", "roommates"):
+            from handlers.roommate_handler import roommate_main_menu
+            await roommate_main_menu(message, state)
+            return True
+        elif action in ("events", "event"):
+            from handlers.events_handler import show_events
+            await show_events(message)
+            return True
+        elif action in ("places", "place"):
+            from handlers.places_handler import show_places_main
+            await show_places_main(message, state)
+            return True
+        elif action == "weather":
+            from handlers.weather_handler import cmd_weather
+            await cmd_weather(message)
+            return True
+        elif action == "news":
+            from handlers.news_handler import cmd_news
+            await cmd_news(message)
+            return True
+        elif action == "pagopa":
+            from handlers.pagopa_handler import pagopa_command
+            await pagopa_command(message)
+            return True
+        elif action in ("cost", "costs"):
+            from handlers.cost_handler import cmd_cost
+            await cmd_cost(message)
+            return True
+        elif action in ("italian", "italy"):
+            from handlers.italian_handler import cmd_italian
+            await cmd_italian(message)
+            return True
+    except Exception as e:
+        logger.error(f"Error dispatching start action {action}: {e}")
+    return False
+
+
 @router.message(CommandStart())
-async def cmd_start(message: Message):
+async def cmd_start(message: Message, command: CommandObject = None, state: FSMContext = None):
     """
     هندلر دستور /start
-    نقطه شروع تعامل کاربر با ربات همراه با معرفی جامع تمامی امکانات
+    نقطه شروع تعامل کاربر با ربات همراه با پشتیبانی از deep-link و مینی‌اپلیکیشن
     """
     user = message.from_user
     logger.info(f"👤 Start command from user: {user.id}")
 
-    # اضافه کردن کاربر به دیتابیس (پروفایل متمرکز)
+    start_args = ""
+    if command and command.args:
+        start_args = command.args.strip().lower()
+    elif message.text and len(message.text.split()) > 1:
+        start_args = message.text.split(maxsplit=1)[1].strip().lower()
+
+    # بررسی و دریافت کاربر از دیتابیس (پروفایل متمرکز)
     from database import db_manager
-    lang_code = get_user_lang_code(user.id)
+    existing_user = await db_manager.get_user(user.id)
+    if existing_user and existing_user.get("language") in SUPPORTED_LANGUAGES:
+        lang_code = existing_user["language"]
+        set_user_lang(user.id, lang_code)
+    else:
+        lang_code = get_user_lang_code(user.id)
+
     await db_manager.upsert_user(user.id, {
         "first_name": user.first_name,
         "last_name": user.last_name,
         "username": user.username,
         "language": lang_code
     })
+
+    # در صورت وجود پارامتر دیپ‌لینک (مثلاً باز شده از مینی‌اپلیکیشن)، هدایت مستقیم به بخش مربوطه
+    if start_args:
+        handled = await route_start_action(message, start_args, state)
+        if handled:
+            return
+
+    # اگر کاربر قبلاً ثبت‌نام شده و زبان انتخاب کرده است، مستقیماً منوی اصلی
+    if existing_user and existing_user.get("language") in SUPPORTED_LANGUAGES:
+        lang = load_lang(lang_code)
+        is_group = message.chat.type in ("group", "supergroup")
+        welcome_back = get_text(lang, "welcome_back", "🎉 <b>خوش برگشتی {name}!</b>\n\nچه کاری برات انجام بدم؟").format(name=user.first_name or "")
+        await message.answer(
+            welcome_back,
+            reply_markup=get_main_menu(lang, is_group=is_group),
+            parse_mode="HTML"
+        )
+        return
 
     welcome_msg = """🎓 <b>به SmartStudentBot پروجا خوش آمدید!</b>
 ━━━━━━━━━━━━━━━━━━━━━
@@ -331,6 +431,33 @@ async def cmd_start(message: Message):
         reply_markup=get_language_keyboard(),
         parse_mode="HTML"
     )
+
+
+@router.message(F.web_app_data)
+async def handle_web_app_data(message: Message, state: FSMContext = None):
+    """پردازش اکشن‌های ارسال شده از مینی‌اپلیکیشن پروجا"""
+    user = message.from_user
+    lang = get_user_lang(user.id)
+    raw_data = message.web_app_data.data
+    logger.info(f"📱 WebApp data from user {user.id}: {raw_data}")
+    action = ""
+    try:
+        parsed = json.loads(raw_data)
+        if isinstance(parsed, dict):
+            action = parsed.get("action", "")
+        else:
+            action = str(parsed)
+    except Exception:
+        action = str(raw_data)
+
+    handled = await route_start_action(message, action, state)
+    if not handled:
+        is_group = message.chat.type in ("group", "supergroup")
+        await message.answer(
+            get_text(lang, "main_menu_title", "🏠 <b>منوی اصلی</b>"),
+            reply_markup=get_main_menu(lang, is_group=is_group),
+            parse_mode="HTML"
+        )
 
 
 @router.message(Command("menu"))
