@@ -161,6 +161,20 @@ async def lifespan(app: FastAPI):
             else:
                 logger.info("🌐 Webhook already configured")
         
+        # 4. تنظیم دکمه منوی اختصاصی مینی‌اپ برای گوشی‌ها و تلگرام موبایل
+        try:
+            from aiogram.types import MenuButtonWebApp, WebAppInfo
+            webapp_url = settings.WEBAPP_URL or "https://smartstudentbot-webapp.onrender.com"
+            await bot.set_chat_menu_button(
+                menu_button=MenuButtonWebApp(
+                    text="🚀 مینی‌اپ پروجا",
+                    web_app=WebAppInfo(url=webapp_url)
+                )
+            )
+            logger.success(f"📱 Telegram Chat Menu Button configured: {webapp_url}")
+        except Exception as e:
+            logger.warning(f"⚠️ Could not set chat menu button: {e}")
+
         logger.success("✅ Bot is ready!")
         
     except Exception as e:
