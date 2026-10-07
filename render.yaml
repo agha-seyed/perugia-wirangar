@@ -30,7 +30,7 @@ services:
       - key: OPENWEATHERMAP_API_KEY
         sync: false
       - key: WEBAPP_URL
-        sync: false
+        value: https://smartstudentbot-webapp.onrender.com
 
   # ۲. سرویس وب‌اپلیکیشن و مینی‌اپ تلگرام (React Vite Static Site - بدون خوابیدن)
   - type: web
