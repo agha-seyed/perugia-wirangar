@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Box, Typography, Card, CardContent, Divider, Chip, ButtonBase } from '@mui/material';
+import { Box, Typography, Card, Divider, Chip, ButtonBase } from '@mui/material';
 import {
   Cloud,
   Person,
@@ -14,7 +14,6 @@ import {
   Memory,
   Terminal,
   AutoFixHigh,
-  Paid,
   Stars,
   School
 } from '@mui/icons-material';

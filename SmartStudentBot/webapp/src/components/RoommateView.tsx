@@ -346,14 +346,16 @@ export default function RoommateView() {
       <Dialog
         open={openModal}
         onClose={() => setOpenModal(false)}
-        PaperProps={{
-          sx: {
-            background: 'linear-gradient(145deg, #072723 0%, #031715 100%)',
-            border: '1px solid rgba(255, 215, 0, 0.35)',
-            borderRadius: 4,
-            color: '#F0FDF4',
-            maxWidth: 420,
-            p: 1
+        slotProps={{
+          paper: {
+            sx: {
+              background: 'linear-gradient(145deg, #072723 0%, #031715 100%)',
+              border: '1px solid rgba(255, 215, 0, 0.35)',
+              borderRadius: 4,
+              color: '#F0FDF4',
+              maxWidth: 420,
+              p: 1
+            }
           }
         }}
       >
@@ -367,7 +369,7 @@ export default function RoommateView() {
             fullWidth
             value={newTitle}
             onChange={(e) => setNewTitle(e.target.value)}
-            InputLabelProps={{ sx: { color: '#94D2BD' } }}
+            slotProps={{ inputLabel: { sx: { color: '#94D2BD' } } }}
             sx={{ '& .MuiOutlinedInput-root': { color: '#fff', '& fieldset': { borderColor: 'rgba(0,168,150,0.4)' } } }}
           />
           <TextField
@@ -377,7 +379,7 @@ export default function RoommateView() {
             fullWidth
             value={newArea}
             onChange={(e) => setNewArea(e.target.value)}
-            InputLabelProps={{ sx: { color: '#94D2BD' } }}
+            slotProps={{ inputLabel: { sx: { color: '#94D2BD' } } }}
             sx={{ '& .MuiOutlinedInput-root': { color: '#fff', '& fieldset': { borderColor: 'rgba(0,168,150,0.4)' } } }}
           >
             {areas.filter(a => a !== 'all').map((a) => (
@@ -391,7 +393,7 @@ export default function RoommateView() {
             fullWidth
             value={newPrice}
             onChange={(e) => setNewPrice(e.target.value)}
-            InputLabelProps={{ sx: { color: '#94D2BD' } }}
+            slotProps={{ inputLabel: { sx: { color: '#94D2BD' } } }}
             sx={{ '& .MuiOutlinedInput-root': { color: '#fff', '& fieldset': { borderColor: 'rgba(0,168,150,0.4)' } } }}
           />
           <TextField
@@ -400,7 +402,7 @@ export default function RoommateView() {
             fullWidth
             value={newContact}
             onChange={(e) => setNewContact(e.target.value)}
-            InputLabelProps={{ sx: { color: '#94D2BD' } }}
+            slotProps={{ inputLabel: { sx: { color: '#94D2BD' } } }}
             sx={{ '& .MuiOutlinedInput-root': { color: '#fff', '& fieldset': { borderColor: 'rgba(0,168,150,0.4)' } } }}
           />
           <TextField
@@ -411,7 +413,7 @@ export default function RoommateView() {
             fullWidth
             value={newDesc}
             onChange={(e) => setNewDesc(e.target.value)}
-            InputLabelProps={{ sx: { color: '#94D2BD' } }}
+            slotProps={{ inputLabel: { sx: { color: '#94D2BD' } } }}
             sx={{ '& .MuiOutlinedInput-root': { color: '#fff', '& fieldset': { borderColor: 'rgba(0,168,150,0.4)' } } }}
           />
         </DialogContent>

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Box, Typography, Card, CardContent, Grid, Chip } from '@mui/material';
-import { WbSunny, Cloud, Air, WaterDrop, WarningAmber, Shield, Terrain, Hiking } from '@mui/icons-material';
+import { WbSunny, Cloud, Air, WaterDrop, Shield, Terrain, Hiking } from '@mui/icons-material';
 
 export default function WeatherView() {
   const [hourly] = useState([
