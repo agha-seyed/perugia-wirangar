@@ -204,21 +204,29 @@ def get_language_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-def get_main_menu(lang: dict) -> InlineKeyboardMarkup:
+def get_main_menu(lang: dict, is_group: bool = False) -> InlineKeyboardMarkup:
     """
     منوی اصلی کامل با ساختاربندی و اولویت‌بندی استاندارد بر اساس نیاز دانشجو
+    پشتیبانی از باز شدن وب‌اپ در گروه‌ها و چت‌های خصوصی
     """
     def t(key, default): return get_text(lang, key, default)
 
+    # دکمه وب‌اپلیکیشن: در گروه‌ها از لینک مستقیم url استفاده می‌شود زیرا تلگرام web_app در گروه را مسدود می‌کند
+    webapp_url = settings.WEBAPP_URL or "https://smartstudentbot-webapp.onrender.com"
+    if is_group:
+        webapp_button = InlineKeyboardButton(
+            text=t("webapp_btn", "🌟 ورود به مینی‌اپلیکیشن پروجا (Mini App) 🚀"),
+            url=webapp_url
+        )
+    else:
+        webapp_button = InlineKeyboardButton(
+            text=t("webapp_btn", "🌟 ورود به مینی‌اپلیکیشن پروجا (Mini App) 🚀"),
+            web_app=WebAppInfo(url=webapp_url)
+        )
+
     buttons = [
         # ردیف طلایی: مینی‌اپلیکیشن تلگرام (Telegram Mini App)
-        [
-            InlineKeyboardButton(
-                text=t("webapp_btn", "🌟 ورود به مینی‌اپلیکیشن پروجا (Mini App) 🚀"),
-                web_app=WebAppInfo(url=settings.WEBAPP_URL) if settings.WEBAPP_URL else None,
-                callback_data="open_webapp" if not settings.WEBAPP_URL else None
-            ),
-        ],
+        [webapp_button],
         # ردیف ۱: مهم‌ترین خدمات پذیرش و بورسیه (اولویت اول دانشجو)
         [
             InlineKeyboardButton(text=t("isee", "🧮 محاسبه ISEE"), callback_data="isee"),
@@ -329,9 +337,10 @@ async def cmd_start(message: Message):
 async def cmd_menu(message: Message):
     """نمایش مستقیم منوی اصلی"""
     lang = get_user_lang(message.from_user.id)
+    is_group = message.chat.type in ("group", "supergroup")
     await message.answer(
         get_text(lang, "main_menu_title", "🏠 <b>منوی اصلی</b>"),
-        reply_markup=get_main_menu(lang),
+        reply_markup=get_main_menu(lang, is_group=is_group),
         parse_mode="HTML"
     )
 
@@ -364,12 +373,22 @@ async def cmd_help(message: Message):
 async def cmd_webapp(message: Message):
     """باز کردن مستقیم مینی‌اپلیکیشن تلگرام"""
     lang = get_user_lang(message.from_user.id)
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(
+    is_group = message.chat.type in ("group", "supergroup")
+    webapp_url = settings.WEBAPP_URL or "https://smartstudentbot-webapp.onrender.com"
+
+    if is_group:
+        webapp_btn = InlineKeyboardButton(
             text=get_text(lang, "webapp_btn", "🌟 ورود به مینی‌اپلیکیشن پروجا (Mini App) 🚀"),
-            web_app=WebAppInfo(url=settings.WEBAPP_URL) if settings.WEBAPP_URL else None,
-            url=settings.WEBAPP_URL if not settings.WEBAPP_URL.startswith("https://") else None
-        )],
+            url=webapp_url
+        )
+    else:
+        webapp_btn = InlineKeyboardButton(
+            text=get_text(lang, "webapp_btn", "🌟 ورود به مینی‌اپلیکیشن پروجا (Mini App) 🚀"),
+            web_app=WebAppInfo(url=webapp_url)
+        )
+
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [webapp_btn],
         [InlineKeyboardButton(
             text=get_text(lang, "back_to_menu", "🔙 بازگشت به منوی اصلی"),
             callback_data="main_menu"
@@ -386,12 +405,21 @@ async def cmd_webapp(message: Message):
 @router.callback_query(F.data == "open_webapp")
 async def cb_open_webapp(callback: CallbackQuery):
     """پاسخ و هدایت کاربر به مینی‌اپلیکیشن تلگرام یا مرورگر"""
-    url = settings.WEBAPP_URL or "http://localhost:5173"
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📱 باز کردن مینی‌اپ در تلگرام", web_app=WebAppInfo(url=url))],
-        [InlineKeyboardButton(text="🌐 باز کردن مستقیم در مرورگر", url=url)],
-        [InlineKeyboardButton(text="🔙 بازگشت به منوی اصلی", callback_data="main_menu")]
-    ])
+    url = settings.WEBAPP_URL or "https://smartstudentbot-webapp.onrender.com"
+    is_group = callback.message.chat.type in ("group", "supergroup") if callback.message else False
+
+    if is_group:
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🌐 باز کردن مستقیم مینی‌اپلیکیشن", url=url)],
+            [InlineKeyboardButton(text="🔙 بازگشت به منوی اصلی", callback_data="main_menu")]
+        ])
+    else:
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📱 باز کردن مینی‌اپ در تلگرام", web_app=WebAppInfo(url=url))],
+            [InlineKeyboardButton(text="🌐 باز کردن مستقیم در مرورگر", url=url)],
+            [InlineKeyboardButton(text="🔙 بازگشت به منوی اصلی", callback_data="main_menu")]
+        ])
+
     await callback.message.answer(
         "🚀 <b>مینی‌اپلیکیشن هوشمند دانشجویان پروجا</b>\n\n"
         "می‌توانید مینی‌اپلیکیشن را مستقیماً داخل تلگرام یا در مرورگر باز کنید:",
@@ -438,10 +466,11 @@ async def process_language_selection(callback: CallbackQuery):
     
     await safe_answer(callback, confirm_msg)
     
+    is_group = callback.message.chat.type in ("group", "supergroup") if callback.message else False
     await safe_edit_text(
         callback.message,
         f"{confirm_msg}\n\n{menu_title}",
-        reply_markup=get_main_menu(lang)
+        reply_markup=get_main_menu(lang, is_group=is_group)
     )
 
 
@@ -463,12 +492,13 @@ async def show_language_menu(callback: CallbackQuery):
 async def back_to_main_menu(callback: CallbackQuery):
     """بازگشت به منوی اصلی"""
     lang = get_user_lang(callback.from_user.id)
+    is_group = callback.message.chat.type in ("group", "supergroup") if callback.message else False
     text = get_text(lang, "main_menu_title", "🏠 <b>منوی اصلی</b>")
     
     await safe_edit_text(
         callback.message,
         text,
-        reply_markup=get_main_menu(lang)
+        reply_markup=get_main_menu(lang, is_group=is_group)
     )
     await safe_answer(callback)
 
