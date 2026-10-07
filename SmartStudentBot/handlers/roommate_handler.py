@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Optional, List, Dict, Any
 
 from aiogram import Router, types, F, Bot
+from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
@@ -24,6 +25,13 @@ from aiogram.types import (
 from aiogram.exceptions import TelegramBadRequest
 
 from config import settings, logger
+
+try:
+    from handlers.cmd_start import get_user_lang, get_text, get_user_lang_code
+except ImportError:
+    def get_user_lang(user_id: int) -> dict: return {}
+    def get_text(lang: dict, key: str, default: str = "") -> str: return default
+    def get_user_lang_code(user_id: int) -> str: return "fa"
 
 router = Router()
 
@@ -198,33 +206,46 @@ def get_gender_icon(gender: str) -> str:
         return "👫"
 
 
-def load_json(path: Path) -> list:
-    """بارگذاری فایل JSON"""
-    if not path.exists():
-        return []
+async def load_json(path_name: str) -> list:
+    """بارگذاری داده از دیتابیس با پشتیبانی از کالکشن‌های اختصاصی"""
     try:
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            return data if isinstance(data, list) else []
+        from database import db_manager
+        if path_name == "roommates" and db_manager.roommates is not None:
+            ads = await db_manager.get_active_roommate_ads(limit=200)
+            if ads:
+                return ads
+        if db_manager.db is not None:
+            doc = await db_manager.db["json_store"].find_one({"name": path_name}, {"_id": 0})
+            if doc and "data" in doc:
+                return doc["data"]
     except Exception as e:
-        logger.error(f"Error loading {path}: {e}")
-        return []
+        logger.error(f"Error loading {path_name}: {e}")
+    return []
 
 
-def save_json(path: Path, data: list) -> bool:
-    """ذخیره در فایل JSON"""
+async def save_json(path_name: str, data: list) -> bool:
+    """ذخیره داده در دیتابیس"""
     try:
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        return True
+        from database import db_manager
+        if path_name == "roommates":
+            for ad in data:
+                await db_manager.save_roommate_ad(ad)
+        if db_manager.db is not None:
+            await db_manager.db["json_store"].update_one(
+                {"name": path_name},
+                {"$set": {"data": data}},
+                upsert=True
+            )
+            return True
+        return False
     except Exception as e:
-        logger.error(f"Error saving {path}: {e}")
+        logger.error(f"Error saving {path_name}: {e}")
         return False
 
 
-def load_roommates() -> list:
+async def load_roommates() -> list:
     """بارگذاری آگهی‌ها با بررسی انقضا و مقداردهی پیش‌فرض"""
-    data = load_json(ROOM_JSON)
+    data = await load_json("roommates")
     updated = False
     today = datetime.now()
     
@@ -263,18 +284,18 @@ def load_roommates() -> list:
                 pass
     
     if updated:
-        save_json(ROOM_JSON, data)
+        await save_json("roommates", data)
     
     return data
 
 
-def get_user_stats(user_id: int) -> dict:
+async def get_user_stats(user_id: int) -> dict:
     """آمار کاربر"""
-    all_ads = load_roommates()
+    all_ads = await load_roommates()
     user_ads = [ad for ad in all_ads if ad.get("user_id") == user_id]
     
     # محاسبه امتیاز
-    ratings = load_json(RATINGS_JSON)
+    ratings = await load_json("room_ratings")
     user_ratings = [r for r in ratings if r.get("to_user") == user_id]
     avg_rating = 0
     if user_ratings:
@@ -293,9 +314,9 @@ def get_user_stats(user_id: int) -> dict:
     }
 
 
-def get_active_ads_count() -> int:
+async def get_active_ads_count() -> int:
     """تعداد آگهی‌های فعال"""
-    all_ads = load_roommates()
+    all_ads = await load_roommates()
     return sum(
         1 for a in all_ads 
         if a.get("active") 
@@ -452,116 +473,210 @@ async def ignore_callback(callback: types.CallbackQuery):
 # منوی اصلی هم‌خانه
 # ───────────────────────────────────────────────────────────────────
 
+@router.message(Command("roommate"))
 @router.callback_query(F.data == "roommate")
-async def roommate_main_menu(callback: types.CallbackQuery, state: FSMContext):
+async def roommate_main_menu(event: types.Message | types.CallbackQuery, state: FSMContext):
     """منوی اصلی سیستم هم‌خانه و مسکن"""
     
     # پاک کردن state قبلی
     await state.clear()
     
+    user_id = event.from_user.id
+    lang_code = get_user_lang_code(user_id)
+    
     # آمار
-    active_count = get_active_ads_count()
-    user_stats = get_user_stats(callback.from_user.id)
+    active_count = await get_active_ads_count()
+    user_stats = await get_user_stats(user_id)
     
-    # ساخت متن
-    text = (
-        "🏠 <b>سامانه هم‌خانه و مسکن پروجا</b>\n\n"
-        "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-    )
+    if lang_code == "en":
+        text = (
+            "🏠 <b>Perugia Housing & Roommate Finder</b>\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"📊 <b>System Overview:</b>\n"
+            f"   🏠 Active Listings: <b>{active_count}</b>\n"
+        )
+        if user_stats["total_ads"] > 0:
+            text += f"\n👤 <b>Your Ads:</b>\n"
+            text += f"   ✅ Active: {user_stats['active_ads']}\n"
+            if user_stats["pending_ads"] > 0:
+                text += f"   ⏳ Under Review: {user_stats['pending_ads']}\n"
+            if user_stats["found_count"] > 0:
+                text += f"   🎉 Found/Closed: {user_stats['found_count']}\n"
+            text += f"   👁 Total Views: {user_stats['total_views']}\n"
+        
+        if user_stats["avg_rating"] > 0:
+            stars = "⭐" * int(user_stats["avg_rating"])
+            text += f"\n⭐ <b>Your Rating:</b> {stars} ({user_stats['avg_rating']}/5)\n"
+            
+        text += "\n━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        text += "👇 Select an option:"
+
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=f"🔍 Browse Listings ({active_count} active)", 
+                    callback_data="room_browse_1"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="➕ Post New Listing (Roommate / Room / Flat)", 
+                    callback_data="room_add_start"
+                )
+            ],
+            [
+                InlineKeyboardButton(text="🎯 Advanced Filters", callback_data="room_filter_menu"),
+                InlineKeyboardButton(text="🔎 Keyword Search", callback_data="room_search_start")
+            ],
+            [
+                InlineKeyboardButton(text="👤 My Listings", callback_data="room_my_ads"),
+                InlineKeyboardButton(text="🔖 Bookmarks", callback_data="room_bookmarks")
+            ],
+            [
+                InlineKeyboardButton(text="🤖 Smart AI Match", callback_data="ai_matchmaker"),
+                InlineKeyboardButton(text="🔔 Listing Alerts", callback_data="room_alert_menu")
+            ],
+            [
+                InlineKeyboardButton(text="💬 Messages", callback_data="room_messages"),
+                InlineKeyboardButton(text="❓ Help & Rules", callback_data="room_help")
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🏠 Return to Main Menu", 
+                    callback_data="main_menu"
+                )
+            ]
+        ])
+    elif lang_code == "it":
+        text = (
+            "🏠 <b>Alloggi e Coinquilini a Perugia</b>\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"📊 <b>Panoramica del Sistema:</b>\n"
+            f"   🏠 Annunci attivi: <b>{active_count}</b>\n"
+        )
+        if user_stats["total_ads"] > 0:
+            text += f"\n👤 <b>I tuoi annunci:</b>\n"
+            text += f"   ✅ Attivi: {user_stats['active_ads']}\n"
+            if user_stats["pending_ads"] > 0:
+                text += f"   ⏳ In attesa: {user_stats['pending_ads']}\n"
+            if user_stats["found_count"] > 0:
+                text += f"   🎉 Conclusi: {user_stats['found_count']}\n"
+            text += f"   👁 Visualizzazioni: {user_stats['total_views']}\n"
+            
+        if user_stats["avg_rating"] > 0:
+            stars = "⭐" * int(user_stats["avg_rating"])
+            text += f"\n⭐ <b>Tua valutazione:</b> {stars} ({user_stats['avg_rating']}/5)\n"
+            
+        text += "\n━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        text += "👇 Scegli un'opzione:"
+
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=f"🔍 Sfoglia Annunci ({active_count} attivi)", 
+                    callback_data="room_browse_1"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="➕ Inserisci Annuncio (Coinquilino / Stanza)", 
+                    callback_data="room_add_start"
+                )
+            ],
+            [
+                InlineKeyboardButton(text="🎯 Filtri Avanzati", callback_data="room_filter_menu"),
+                InlineKeyboardButton(text="🔎 Ricerca Testuale", callback_data="room_search_start")
+            ],
+            [
+                InlineKeyboardButton(text="👤 I Miei Annunci", callback_data="room_my_ads"),
+                InlineKeyboardButton(text="🔖 Salvati", callback_data="room_bookmarks")
+            ],
+            [
+                InlineKeyboardButton(text="🤖 Matchmaking IA", callback_data="ai_matchmaker"),
+                InlineKeyboardButton(text="🔔 Avvisi Annunci", callback_data="room_alert_menu")
+            ],
+            [
+                InlineKeyboardButton(text="💬 Messaggi", callback_data="room_messages"),
+                InlineKeyboardButton(text="❓ Guida e Regole", callback_data="room_help")
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🏠 Torna al Menu Principale", 
+                    callback_data="main_menu"
+                )
+            ]
+        ])
+    else:
+        # ساخت متن فارسی
+        text = (
+            "🏠 <b>سامانه هم‌خانه و مسکن پروجا</b>\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        )
+        
+        # آمار سیستم
+        text += f"📊 <b>وضعیت سیستم:</b>\n"
+        text += f"   🏠 آگهی‌های فعال: <b>{active_count}</b>\n"
+        
+        # آمار کاربر
+        if user_stats["total_ads"] > 0:
+            text += f"\n👤 <b>آگهی‌های شما:</b>\n"
+            text += f"   ✅ فعال: {user_stats['active_ads']}\n"
+            if user_stats["pending_ads"] > 0:
+                text += f"   ⏳ در انتظار تأیید: {user_stats['pending_ads']}\n"
+            if user_stats["found_count"] > 0:
+                text += f"   🎉 موفق: {user_stats['found_count']}\n"
+            text += f"   👁 بازدید کل: {user_stats['total_views']}\n"
+        
+        # امتیاز کاربر
+        if user_stats["avg_rating"] > 0:
+            stars = "⭐" * int(user_stats["avg_rating"])
+            text += f"\n⭐ <b>امتیاز شما:</b> {stars} ({user_stats['avg_rating']}/5)\n"
+        
+        text += "\n━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        text += "👇 انتخاب کنید:"
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=f"🔍 جستجو و مشاهده آگهی‌ها ({active_count} آگهی فعال)", 
+                    callback_data="room_browse_1"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="➕ ثبت آگهی جدید (هم‌خانه / اتاق / خانه)", 
+                    callback_data="room_add_start"
+                )
+            ],
+            [
+                InlineKeyboardButton(text="🎯 فیلتر پیشرفته", callback_data="room_filter_menu"),
+                InlineKeyboardButton(text="🔎 جستجوی متنی", callback_data="room_search_start")
+            ],
+            [
+                InlineKeyboardButton(text="👤 آگهی‌های من", callback_data="room_my_ads"),
+                InlineKeyboardButton(text="🔖 نشان‌شده‌ها", callback_data="room_bookmarks")
+            ],
+            [
+                InlineKeyboardButton(text="🤖 مچ‌میکر هوشمند (AI Match)", callback_data="ai_matchmaker"),
+                InlineKeyboardButton(text="🔔 تنظیم هشدار آگهی", callback_data="room_alert_menu")
+            ],
+            [
+                InlineKeyboardButton(text="💬 پیام‌ها", callback_data="room_messages"),
+                InlineKeyboardButton(text="❓ راهنما و قوانین", callback_data="room_help")
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🏠 بازگشت به منوی اصلی", 
+                    callback_data="main_menu"
+                )
+            ]
+        ])
     
-    # آمار سیستم
-    text += f"📊 <b>وضعیت سیستم:</b>\n"
-    text += f"   🏠 آگهی‌های فعال: <b>{active_count}</b>\n"
-    
-    # آمار کاربر
-    if user_stats["total_ads"] > 0:
-        text += f"\n👤 <b>آگهی‌های شما:</b>\n"
-        text += f"   ✅ فعال: {user_stats['active_ads']}\n"
-        if user_stats["pending_ads"] > 0:
-            text += f"   ⏳ در انتظار تأیید: {user_stats['pending_ads']}\n"
-        if user_stats["found_count"] > 0:
-            text += f"   🎉 موفق: {user_stats['found_count']}\n"
-        text += f"   👁 بازدید کل: {user_stats['total_views']}\n"
-    
-    # امتیاز کاربر
-    if user_stats["avg_rating"] > 0:
-        stars = "⭐" * int(user_stats["avg_rating"])
-        text += f"\n⭐ <b>امتیاز شما:</b> {stars} ({user_stats['avg_rating']}/5)\n"
-    
-    text += "\n━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-    text += "👇 انتخاب کنید:"
-    
-    # ساخت کیبورد
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        # ردیف 1: مشاهده آگهی‌ها
-        [
-            InlineKeyboardButton(
-                text=f"📋 مشاهده آگهی‌ها ({active_count})", 
-                callback_data="room_browse_1"
-            )
-        ],
-        # ردیف 2: جستجو
-        [
-            InlineKeyboardButton(
-                text="🔍 فیلتر پیشرفته", 
-                callback_data="room_filter_menu"
-            ),
-            InlineKeyboardButton(
-                text="🔎 جستجوی متنی", 
-                callback_data="room_search_start"
-            )
-        ],
-        # ردیف 3: ثبت آگهی
-        [
-            InlineKeyboardButton(
-                text="📝 ثبت آگهی جدید", 
-                callback_data="room_add_start"
-            )
-        ],
-        # ردیف 4: مدیریت
-        [
-            InlineKeyboardButton(
-                text="👤 آگهی‌های من", 
-                callback_data="room_my_ads"
-            ),
-            InlineKeyboardButton(
-                text="🔖 ذخیره‌شده‌ها", 
-                callback_data="room_bookmarks"
-            )
-        ],
-        # ردیف 5: هشدار و پیام
-        [
-            InlineKeyboardButton(
-                text="🔔 تنظیم هشدار", 
-                callback_data="room_alert_menu"
-            ),
-            InlineKeyboardButton(
-                text="💬 پیام‌ها", 
-                callback_data="room_messages"
-            )
-        ],
-        # ردیف 6: راهنما
-        [
-            InlineKeyboardButton(
-                text="❓ راهنما", 
-                callback_data="room_help"
-            ),
-            InlineKeyboardButton(
-                text="📊 آمار کلی", 
-                callback_data="room_stats"
-            )
-        ],
-        # ردیف 7: بازگشت
-        [
-            InlineKeyboardButton(
-                text="🔙 بازگشت به منوی اصلی", 
-                callback_data="main_menu"
-            )
-        ]
-    ])
-    
-    await safe_edit_message(callback.message, text, keyboard)
-    await callback.answer()
+    if isinstance(event, types.CallbackQuery):
+        await safe_edit_message(event.message, text, keyboard)
+        await event.answer()
+    else:
+        await event.answer(text, reply_markup=keyboard, parse_mode="HTML")
 
 
 # ───────────────────────────────────────────────────────────────────
@@ -571,43 +686,100 @@ async def roommate_main_menu(callback: types.CallbackQuery, state: FSMContext):
 @router.callback_query(F.data == "room_help")
 async def show_help(callback: types.CallbackQuery):
     """نمایش راهنمای سیستم"""
+    user_id = callback.from_user.id
+    lang_code = get_user_lang_code(user_id)
     
-    text = (
-        "❓ <b>راهنمای سیستم هم‌خانه</b>\n\n"
-        "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        
-        "📋 <b>مشاهده آگهی‌ها:</b>\n"
-        "   لیست همه آگهی‌های فعال را ببینید\n\n"
-        
-        "🔍 <b>فیلتر پیشرفته:</b>\n"
-        "   بر اساس جنسیت، بودجه، منطقه و امکانات فیلتر کنید\n\n"
-        
-        "🔎 <b>جستجوی متنی:</b>\n"
-        "   با کلمه کلیدی در توضیحات جستجو کنید\n\n"
-        
-        "📝 <b>ثبت آگهی:</b>\n"
-        f"   حداکثر {MAX_ADS_PER_USER} آگهی فعال\n"
-        f"   هر آگهی {EXPIRATION_DAYS} روز فعال می‌ماند\n\n"
-        
-        "🔔 <b>هشدار:</b>\n"
-        "   وقتی آگهی مناسب ثبت شد، پیام بگیرید\n\n"
-        
-        "🔖 <b>ذخیره آگهی:</b>\n"
-        "   آگهی‌های مورد علاقه را ذخیره کنید\n\n"
-        
-        "⭐ <b>امتیازدهی:</b>\n"
-        "   به آگهی‌دهنده‌ها امتیاز دهید\n\n"
-        
-        "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        "💡 <b>نکات مهم:</b>\n"
-        "   • آگهی‌های ویژه 🌟 بالاتر نمایش داده می‌شوند\n"
-        "   • قبل از تماس، پروفایل را بررسی کنید\n"
-        "   • مشکلات را گزارش دهید"
-    )
-    
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔙 بازگشت", callback_data="roommate")]
-    ])
+    if lang_code == "en":
+        text = (
+            "❓ <b>Housing & Roommate Guide</b>\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "📋 <b>Browse Listings:</b>\n"
+            "   Explore all verified student ads in Perugia\n\n"
+            "🔍 <b>Advanced Filters:</b>\n"
+            "   Filter by budget, room type, gender, and amenities\n\n"
+            "🔎 <b>Keyword Search:</b>\n"
+            "   Search titles and descriptions by keywords\n\n"
+            "📝 <b>Post an Ad:</b>\n"
+            f"   Up to {MAX_ADS_PER_USER} active listings per student\n"
+            f"   Each listing stays live for {EXPIRATION_DAYS} days\n\n"
+            "🔔 <b>Smart Alerts:</b>\n"
+            "   Get notified instantly when matching rooms appear\n\n"
+            "🔖 <b>Bookmarks:</b>\n"
+            "   Save listings to review later\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "💡 <b>Tips & Rules:</b>\n"
+            "   • Always request a registered rental contract\n"
+            "   • Check advertiser profile and ratings before paying\n"
+            "   • Report suspicious ads immediately"
+        )
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🤖 Smart AI Match", callback_data="ai_matchmaker")],
+            [InlineKeyboardButton(text="🔙 Back", callback_data="roommate")]
+        ])
+    elif lang_code == "it":
+        text = (
+            "❓ <b>Guida per Alloggi e Coinquilini</b>\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "📋 <b>Esplora Annunci:</b>\n"
+            "   Consulta tutti gli annunci verificati a Perugia\n\n"
+            "🔍 <b>Filtri Avanzati:</b>\n"
+            "   Filtra per budget, tipologia, genere e servizi\n\n"
+            "🔎 <b>Ricerca Testuale:</b>\n"
+            "   Cerca per parole chiave nel testo degli annunci\n\n"
+            "📝 <b>Pubblica un Annuncio:</b>\n"
+            f"   Fino a {MAX_ADS_PER_USER} annunci attivi contemporaneamente\n"
+            f"   Ogni annuncio dura {EXPIRATION_DAYS} giorni\n\n"
+            "🔔 <b>Avvisi Notifiche:</b>\n"
+            "   Ricevi notifiche istantanee per nuovi annunci compatibili\n\n"
+            "🔖 <b>Salvati:</b>\n"
+            "   Salva gli annunci preferiti\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "💡 <b>Consigli e Regole:</b>\n"
+            "   • Richiedi sempre un regolare contratto registrato\n"
+            "   • Verifica il profilo dell'utente prima di versare caparre\n"
+            "   • Segnala tempestivamente gli annunci sospetti"
+        )
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🤖 Matchmaking IA", callback_data="ai_matchmaker")],
+            [InlineKeyboardButton(text="🔙 Indietro", callback_data="roommate")]
+        ])
+    else:
+        text = (
+            "❓ <b>راهنمای سیستم هم‌خانه</b>\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            
+            "📋 <b>مشاهده آگهی‌ها:</b>\n"
+            "   لیست همه آگهی‌های فعال را ببینید\n\n"
+            
+            "🔍 <b>فیلتر پیشرفته:</b>\n"
+            "   بر اساس جنسیت، بودجه، منطقه و امکانات فیلتر کنید\n\n"
+            
+            "🔎 <b>جستجوی متنی:</b>\n"
+            "   با کلمه کلیدی در توضیحات جستجو کنید\n\n"
+            
+            "📝 <b>ثبت آگهی:</b>\n"
+            f"   حداکثر {MAX_ADS_PER_USER} آگهی فعال\n"
+            f"   هر آگهی {EXPIRATION_DAYS} روز فعال می‌ماند\n\n"
+            
+            "🔔 <b>هشدار:</b>\n"
+            "   وقتی آگهی مناسب ثبت شد، پیام بگیرید\n\n"
+            
+            "🔖 <b>ذخیره آگهی:</b>\n"
+            "   آگهی‌های مورد علاقه را ذخیره کنید\n\n"
+            
+            "⭐ <b>امتیازدهی:</b>\n"
+            "   به آگهی‌دهنده‌ها امتیاز دهید\n\n"
+            
+            "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "💡 <b>نکات مهم:</b>\n"
+            "   • آگهی‌های ویژه 🌟 بالاتر نمایش داده می‌شوند\n"
+            "   • قبل از تماس، پروفایل را بررسی کنید\n"
+            "   • مشکلات را گزارش دهید"
+        )
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🤖 مچ‌میکر هوشمند (AI Match)", callback_data="ai_matchmaker")],
+            [InlineKeyboardButton(text="🔙 بازگشت", callback_data="roommate")]
+        ])
     
     await safe_edit_message(callback.message, text, keyboard)
     await callback.answer()
@@ -621,7 +793,7 @@ async def show_help(callback: types.CallbackQuery):
 async def show_stats(callback: types.CallbackQuery):
     """نمایش آمار کلی سیستم"""
     
-    all_ads = load_roommates()
+    all_ads = await load_roommates()
     
     total = len(all_ads)
     active = sum(1 for a in all_ads if a.get("active") and a.get("status") == "approved" and not a.get("is_found"))
@@ -677,6 +849,7 @@ async def show_stats(callback: types.CallbackQuery):
             text += f"   {area}: {count}\n"
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🤖 مچ‌میکر هوشمند (AI Match)", callback_data="ai_matchmaker")],
         [InlineKeyboardButton(text="🔙 بازگشت", callback_data="roommate")]
     ])
     
@@ -705,7 +878,7 @@ async def browse_ads(callback: types.CallbackQuery, state: FSMContext):
     keyword = data.get("search_keyword", "")
     
     # بارگذاری آگهی‌ها
-    all_ads = load_roommates()
+    all_ads = await load_roommates()
     
     # فیلتر اولیه: فعال، تأیید شده، پیدا نشده
     ads = [
@@ -784,6 +957,7 @@ async def browse_ads(callback: types.CallbackQuery, state: FSMContext):
             text += "💡 اولین نفر باشید که آگهی ثبت می‌کند!"
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🤖 مچ‌میکر هوشمند (AI Match)", callback_data="ai_matchmaker")],
             [InlineKeyboardButton(text="🔄 پاک کردن فیلترها", callback_data="room_clear_filters")],
             [InlineKeyboardButton(text="📝 ثبت آگهی", callback_data="room_add_start")],
             [InlineKeyboardButton(text="🔙 بازگشت", callback_data="roommate")]
@@ -913,11 +1087,10 @@ async def clear_filters(callback: types.CallbackQuery, state: FSMContext):
 @router.callback_query(F.data == "room_filter_menu")
 async def filter_menu(callback: types.CallbackQuery, state: FSMContext):
     """منوی فیلتر پیشرفته"""
+    user_id = callback.from_user.id
+    lang_code = get_user_lang_code(user_id)
     
     data = await state.get_data()
-    
-    text = "🔍 <b>فیلتر پیشرفته</b>\n\n"
-    text += "فیلترهای مورد نظر را انتخاب کنید:\n\n"
     
     # نمایش فیلترهای فعلی
     current = []
@@ -939,25 +1112,69 @@ async def filter_menu(callback: types.CallbackQuery, state: FSMContext):
         am_count = len(data["filter_amenities"])
         current.append(f"✨ امکانات: {am_count} مورد")
     
-    if current:
-        text += "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        text += "<b>فیلترهای فعال:</b>\n"
-        for f in current:
-            text += f"   ✓ {f}\n"
-        text += "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-    
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📋 نوع آگهی", callback_data="room_flt_type")],
-        [InlineKeyboardButton(text="👤 جنسیت", callback_data="room_flt_gender")],
-        [InlineKeyboardButton(text="💰 سقف بودجه", callback_data="room_flt_budget")],
-        [InlineKeyboardButton(text="📍 منطقه", callback_data="room_flt_area")],
-        [InlineKeyboardButton(text="✨ امکانات", callback_data="room_flt_amenities")],
-        [
-            InlineKeyboardButton(text="✅ اعمال فیلتر", callback_data="room_browse_1"),
-            InlineKeyboardButton(text="🔄 پاک کردن", callback_data="room_clear_filters")
-        ],
-        [InlineKeyboardButton(text="🔙 بازگشت", callback_data="roommate")]
-    ])
+    if lang_code == "en":
+        text = "🔍 <b>Advanced Filters</b>\n\nSelect your filter criteria:\n\n"
+        if current:
+            text += "━━━━━━━━━━━━━━━━━━━━━━━━━\n<b>Active Filters:</b>\n"
+            for f in current:
+                text += f"   ✓ {f}\n"
+            text += "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🤖 Smart AI Match", callback_data="ai_matchmaker")],
+            [InlineKeyboardButton(text="📋 Property Type", callback_data="room_flt_type")],
+            [InlineKeyboardButton(text="👤 Gender Preference", callback_data="room_flt_gender")],
+            [InlineKeyboardButton(text="💰 Max Budget", callback_data="room_flt_budget")],
+            [InlineKeyboardButton(text="📍 Neighborhood", callback_data="room_flt_area")],
+            [InlineKeyboardButton(text="✨ Amenities", callback_data="room_flt_amenities")],
+            [
+                InlineKeyboardButton(text="✅ Apply Filters", callback_data="room_browse_1"),
+                InlineKeyboardButton(text="🔄 Reset", callback_data="room_clear_filters")
+            ],
+            [InlineKeyboardButton(text="🔙 Back", callback_data="roommate")]
+        ])
+    elif lang_code == "it":
+        text = "🔍 <b>Filtri Avanzati</b>\n\nSeleziona i criteri desiderati:\n\n"
+        if current:
+            text += "━━━━━━━━━━━━━━━━━━━━━━━━━\n<b>Filtri Attivi:</b>\n"
+            for f in current:
+                text += f"   ✓ {f}\n"
+            text += "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🤖 Matchmaking IA", callback_data="ai_matchmaker")],
+            [InlineKeyboardButton(text="📋 Tipologia Alloggio", callback_data="room_flt_type")],
+            [InlineKeyboardButton(text="👤 Preferenza Genere", callback_data="room_flt_gender")],
+            [InlineKeyboardButton(text="💰 Budget Massimo", callback_data="room_flt_budget")],
+            [InlineKeyboardButton(text="📍 Zona / Quartiere", callback_data="room_flt_area")],
+            [InlineKeyboardButton(text="✨ Servizi Inclusi", callback_data="room_flt_amenities")],
+            [
+                InlineKeyboardButton(text="✅ Applica Filtri", callback_data="room_browse_1"),
+                InlineKeyboardButton(text="🔄 Reimposta", callback_data="room_clear_filters")
+            ],
+            [InlineKeyboardButton(text="🔙 Indietro", callback_data="roommate")]
+        ])
+    else:
+        text = "🔍 <b>فیلتر پیشرفته</b>\n\n"
+        text += "فیلترهای مورد نظر را انتخاب کنید:\n\n"
+        if current:
+            text += "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            text += "<b>فیلترهای فعال:</b>\n"
+            for f in current:
+                text += f"   ✓ {f}\n"
+            text += "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🤖 مچ‌میکر هوشمند (AI Match)", callback_data="ai_matchmaker")],
+            [InlineKeyboardButton(text="📋 نوع آگهی", callback_data="room_flt_type")],
+            [InlineKeyboardButton(text="👤 جنسیت", callback_data="room_flt_gender")],
+            [InlineKeyboardButton(text="💰 سقف بودجه", callback_data="room_flt_budget")],
+            [InlineKeyboardButton(text="📍 منطقه", callback_data="room_flt_area")],
+            [InlineKeyboardButton(text="✨ امکانات", callback_data="room_flt_amenities")],
+            [
+                InlineKeyboardButton(text="✅ اعمال فیلتر", callback_data="room_browse_1"),
+                InlineKeyboardButton(text="🔄 پاک کردن", callback_data="room_clear_filters")
+            ],
+            [InlineKeyboardButton(text="🔙 بازگشت", callback_data="roommate")]
+        ])
     
     await safe_edit_message(callback.message, text, keyboard)
     await callback.answer()
@@ -1017,6 +1234,7 @@ async def filter_gender_menu(callback: types.CallbackQuery, state: FSMContext):
     text = "👤 <b>جنسیت مورد نظر:</b>"
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🤖 مچ‌میکر هوشمند (AI Match)", callback_data="ai_matchmaker")],
         [
             InlineKeyboardButton(text="👨 آقایان", callback_data="room_flt_gender_آقا"),
             InlineKeyboardButton(text="👩 خانم‌ها", callback_data="room_flt_gender_خانم")
@@ -1053,6 +1271,7 @@ async def filter_budget_menu(callback: types.CallbackQuery, state: FSMContext):
     text = "💰 <b>سقف بودجه ماهانه:</b>"
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🤖 مچ‌میکر هوشمند (AI Match)", callback_data="ai_matchmaker")],
         [
             InlineKeyboardButton(text="≤ 300€", callback_data="room_flt_budget_300"),
             InlineKeyboardButton(text="≤ 350€", callback_data="room_flt_budget_350")
@@ -1221,6 +1440,7 @@ async def search_start(callback: types.CallbackQuery, state: FSMContext):
     )
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🤖 مچ‌میکر هوشمند (AI Match)", callback_data="ai_matchmaker")],
         [InlineKeyboardButton(text="❌ لغو جستجو", callback_data="roommate")]
     ])
     
@@ -1287,7 +1507,7 @@ async def view_ad_detail(callback: types.CallbackQuery, state: FSMContext):
     page_num = int(parts[3]) if len(parts) > 3 else 1
     
     # بارگذاری آگهی
-    all_ads = load_roommates()
+    all_ads = await load_roommates()
     ad = next((a for a in all_ads if a["id"] == ad_id), None)
     
     if not ad:
@@ -1297,7 +1517,7 @@ async def view_ad_detail(callback: types.CallbackQuery, state: FSMContext):
     # افزایش بازدید (فقط برای کاربران دیگر)
     if ad.get("user_id") != callback.from_user.id:
         ad["views"] = ad.get("views", 0) + 1
-        save_json(ROOM_JSON, all_ads)
+        await save_json("roommates", all_ads)
     
     # ═══ ساخت متن جزئیات ═══
     
@@ -1355,7 +1575,7 @@ async def view_ad_detail(callback: types.CallbackQuery, state: FSMContext):
     text += "\n"
     
     # امتیاز آگهی‌دهنده
-    user_stats = get_user_stats(ad.get("user_id", 0))
+    user_stats = await get_user_stats(ad.get("user_id", 0))
     if user_stats["avg_rating"] > 0:
         stars = "⭐" * int(user_stats["avg_rating"])
         text += f"⭐ امتیاز: {stars} ({user_stats['avg_rating']}/5 از {user_stats['rating_count']} نظر)\n"
@@ -1406,7 +1626,7 @@ async def view_ad_detail(callback: types.CallbackQuery, state: FSMContext):
         ])
         
         # بررسی ذخیره بودن آگهی
-        bookmarks = load_json(BOOKMARKS_JSON)
+        bookmarks = await load_json("room_bookmarks")
         is_bookmarked = any(
             b.get("user_id") == callback.from_user.id and b.get("ad_id") == ad_id
             for b in bookmarks
@@ -1491,7 +1711,7 @@ async def view_photos(callback: types.CallbackQuery):
     photo_idx = int(parts[3]) if len(parts) > 3 else 0
     
     # بارگذاری آگهی
-    all_ads = load_roommates()
+    all_ads = await load_roommates()
     ad = next((a for a in all_ads if a["id"] == ad_id), None)
     
     if not ad:
@@ -1562,7 +1782,7 @@ async def bookmark_ad(callback: types.CallbackQuery):
     user_id = callback.from_user.id
     
     # بارگذاری bookmark ها
-    bookmarks = load_json(BOOKMARKS_JSON)
+    bookmarks = await load_json("room_bookmarks")
     
     # بررسی تکراری نبودن
     existing = next(
@@ -1581,7 +1801,7 @@ async def bookmark_ad(callback: types.CallbackQuery):
         "date": datetime.now().strftime("%Y-%m-%d %H:%M")
     })
     
-    save_json(BOOKMARKS_JSON, bookmarks)
+    await save_json("room_bookmarks", bookmarks)
     
     await callback.answer("✅ آگهی ذخیره شد!", show_alert=True)
     
@@ -1598,13 +1818,13 @@ async def unbookmark_ad(callback: types.CallbackQuery):
     user_id = callback.from_user.id
     
     # بارگذاری و فیلتر
-    bookmarks = load_json(BOOKMARKS_JSON)
+    bookmarks = await load_json("room_bookmarks")
     bookmarks = [
         b for b in bookmarks
         if not (b["user_id"] == user_id and b["ad_id"] == ad_id)
     ]
     
-    save_json(BOOKMARKS_JSON, bookmarks)
+    await save_json("room_bookmarks", bookmarks)
     
     await callback.answer("🗑 از ذخیره‌ها حذف شد!", show_alert=True)
     
@@ -1624,7 +1844,7 @@ async def show_bookmarks(callback: types.CallbackQuery):
     user_id = callback.from_user.id
     
     # بارگذاری
-    bookmarks = load_json(BOOKMARKS_JSON)
+    bookmarks = await load_json("room_bookmarks")
     user_bookmarks = [b for b in bookmarks if b["user_id"] == user_id]
     
     if not user_bookmarks:
@@ -1635,6 +1855,7 @@ async def show_bookmarks(callback: types.CallbackQuery):
         )
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🤖 مچ‌میکر هوشمند (AI Match)", callback_data="ai_matchmaker")],
             [InlineKeyboardButton(text="📋 مشاهده آگهی‌ها", callback_data="room_browse_1")],
             [InlineKeyboardButton(text="🔙 بازگشت", callback_data="roommate")]
         ])
@@ -1644,7 +1865,7 @@ async def show_bookmarks(callback: types.CallbackQuery):
         return
     
     # بارگذاری آگهی‌ها
-    all_ads = load_roommates()
+    all_ads = await load_roommates()
     
     text = f"🔖 <b>آگهی‌های ذخیره شده ({len(user_bookmarks)})</b>\n\n"
     
@@ -1676,7 +1897,7 @@ async def show_bookmarks(callback: types.CallbackQuery):
             ]
     
     # ذخیره تغییرات
-    save_json(BOOKMARKS_JSON, bookmarks)
+    await save_json("room_bookmarks", bookmarks)
     
     if valid_count == 0:
         text += "⚠️ همه آگهی‌های ذخیره شده منقضی یا حذف شده‌اند."
@@ -1710,6 +1931,7 @@ async def report_ad_start(callback: types.CallbackQuery, state: FSMContext):
     )
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🤖 مچ‌میکر هوشمند (AI Match)", callback_data="ai_matchmaker")],
         [InlineKeyboardButton(text="🚫 اطلاعات نادرست", callback_data="report_reason_fake")],
         [InlineKeyboardButton(text="💰 کلاهبرداری / قیمت غیرواقعی", callback_data="report_reason_scam")],
         [InlineKeyboardButton(text="🔞 محتوای نامناسب", callback_data="report_reason_inappropriate")],
@@ -1783,7 +2005,7 @@ async def process_report(callback, state: FSMContext, reason: str):
         return
     
     # ذخیره گزارش در آگهی
-    all_ads = load_roommates()
+    all_ads = await load_roommates()
     ad = next((a for a in all_ads if a["id"] == ad_id), None)
     
     if ad:
@@ -1796,7 +2018,7 @@ async def process_report(callback, state: FSMContext, reason: str):
             "date": datetime.now().strftime("%Y-%m-%d %H:%M")
         })
         
-        save_json(ROOM_JSON, all_ads)
+        await save_json("roommates", all_ads)
         
         # اطلاع به ادمین‌ها
         admin_text = (
@@ -1811,6 +2033,7 @@ async def process_report(callback, state: FSMContext, reason: str):
         )
         
         admin_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🤖 مچ‌میکر هوشمند (AI Match)", callback_data="ai_matchmaker")],
             [
                 InlineKeyboardButton(text="👁 مشاهده آگهی", callback_data=f"room_view_{ad_id}_1"),
                 InlineKeyboardButton(text="🗑 حذف آگهی", callback_data=f"adm_delete_{ad_id}")
@@ -1830,6 +2053,7 @@ async def process_report(callback, state: FSMContext, reason: str):
     )
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🤖 مچ‌میکر هوشمند (AI Match)", callback_data="ai_matchmaker")],
         [InlineKeyboardButton(text="🔙 بازگشت", callback_data="roommate")]
     ])
     
@@ -1850,7 +2074,7 @@ async def rate_user_start(callback: types.CallbackQuery, state: FSMContext):
     ad_id = int(callback.data.replace("room_rate_", ""))
     
     # بارگذاری آگهی
-    all_ads = load_roommates()
+    all_ads = await load_roommates()
     ad = next((a for a in all_ads if a["id"] == ad_id), None)
     
     if not ad:
@@ -1858,7 +2082,7 @@ async def rate_user_start(callback: types.CallbackQuery, state: FSMContext):
         return
     
     # بررسی امتیاز قبلی
-    ratings = load_json(RATINGS_JSON)
+    ratings = await load_json("room_ratings")
     existing = next(
         (r for r in ratings 
          if r["from_user"] == callback.from_user.id 
@@ -1887,6 +2111,7 @@ async def rate_user_start(callback: types.CallbackQuery, state: FSMContext):
     )
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🤖 مچ‌میکر هوشمند (AI Match)", callback_data="ai_matchmaker")],
         [
             InlineKeyboardButton(text="⭐", callback_data="rate_score_1"),
             InlineKeyboardButton(text="⭐⭐", callback_data="rate_score_2"),
@@ -1918,6 +2143,7 @@ async def rate_score_selected(callback: types.CallbackQuery, state: FSMContext):
     )
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🤖 مچ‌میکر هوشمند (AI Match)", callback_data="ai_matchmaker")],
         [InlineKeyboardButton(text="⏭ رد کردن (بدون نظر)", callback_data="rate_skip_comment")]
     ])
     
@@ -1966,7 +2192,7 @@ async def save_rating(callback, state: FSMContext, comment: str):
     ad_id = data.get("rate_ad_id")
     
     # بارگذاری و ذخیره
-    ratings = load_json(RATINGS_JSON)
+    ratings = await load_json("room_ratings")
     
     ratings.append({
         "from_user": callback.from_user.id,
@@ -1979,7 +2205,7 @@ async def save_rating(callback, state: FSMContext, comment: str):
         "date": datetime.now().strftime("%Y-%m-%d %H:%M")
     })
     
-    save_json(RATINGS_JSON, ratings)
+    await save_json("room_ratings", ratings)
     
     await state.clear()
     
@@ -1997,6 +2223,7 @@ async def save_rating(callback, state: FSMContext, comment: str):
     text += "\nبا تشکر از مشارکت شما!"
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🤖 مچ‌میکر هوشمند (AI Match)", callback_data="ai_matchmaker")],
         [InlineKeyboardButton(text="🔙 بازگشت", callback_data="roommate")]
     ])
     
@@ -2017,7 +2244,7 @@ async def send_message_start(callback: types.CallbackQuery, state: FSMContext):
     ad_id = int(callback.data.replace("room_msg_", ""))
     
     # بارگذاری آگهی
-    all_ads = load_roommates()
+    all_ads = await load_roommates()
     ad = next((a for a in all_ads if a["id"] == ad_id), None)
     
     if not ad:
@@ -2038,6 +2265,7 @@ async def send_message_start(callback: types.CallbackQuery, state: FSMContext):
     )
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🤖 مچ‌میکر هوشمند (AI Match)", callback_data="ai_matchmaker")],
         [InlineKeyboardButton(text="❌ لغو", callback_data=f"room_view_{ad_id}_1")]
     ])
     
@@ -2066,7 +2294,7 @@ async def send_message_process(message: types.Message, state: FSMContext):
         return
     
     # ذخیره پیام
-    messages = load_json(MESSAGES_JSON)
+    messages = await load_json("room_messages")
     
     new_msg = {
         "id": len(messages) + 1,
@@ -2081,15 +2309,15 @@ async def send_message_process(message: types.Message, state: FSMContext):
     }
     
     messages.append(new_msg)
-    save_json(MESSAGES_JSON, messages)
+    await save_json("room_messages", messages)
     
     # افزایش تعداد تماس در آگهی
-    all_ads = load_roommates()
+    all_ads = await load_roommates()
     for ad in all_ads:
         if ad["id"] == ad_id:
             ad["contacts"] = ad.get("contacts", 0) + 1
             break
-    save_json(ROOM_JSON, all_ads)
+    await save_json("roommates", all_ads)
     
     # ارسال نوتیفیکیشن به آگهی‌دهنده
     try:
@@ -2101,6 +2329,7 @@ async def send_message_process(message: types.Message, state: FSMContext):
         )
         
         notify_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🤖 مچ‌میکر هوشمند (AI Match)", callback_data="ai_matchmaker")],
             [InlineKeyboardButton(
                 text="💬 پاسخ مستقیم",
                 url=f"tg://user?id={message.from_user.id}"
@@ -2127,6 +2356,7 @@ async def send_message_process(message: types.Message, state: FSMContext):
     )
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🤖 مچ‌میکر هوشمند (AI Match)", callback_data="ai_matchmaker")],
         [InlineKeyboardButton(text="🔙 بازگشت", callback_data="roommate")]
     ])
     
@@ -2144,7 +2374,7 @@ async def show_messages(callback: types.CallbackQuery):
     user_id = callback.from_user.id
     
     # بارگذاری پیام‌ها
-    messages = load_json(MESSAGES_JSON)
+    messages = await load_json("room_messages")
     
     # پیام‌های دریافتی و ارسالی
     received = [m for m in messages if m["to_user"] == user_id]
@@ -2172,13 +2402,14 @@ async def show_messages(callback: types.CallbackQuery):
                 text += f"   📅 {msg['date']}\n\n"
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🤖 مچ‌میکر هوشمند (AI Match)", callback_data="ai_matchmaker")],
         [InlineKeyboardButton(text="🔙 بازگشت", callback_data="roommate")]
     ])
     
     # علامت‌گذاری به عنوان خوانده شده
     for msg in received:
         msg["read"] = True
-    save_json(MESSAGES_JSON, messages)
+    await save_json("room_messages", messages)
     
     await safe_edit_message(callback.message, text, keyboard)
     await callback.answer()
@@ -2206,7 +2437,7 @@ async def add_ad_start(callback: types.CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
     
     # بررسی محدودیت تعداد آگهی
-    all_ads = load_roommates()
+    all_ads = await load_roommates()
     user_active_ads = [
         ad for ad in all_ads
         if ad.get("user_id") == user_id
@@ -2226,6 +2457,7 @@ async def add_ad_start(callback: types.CallbackQuery, state: FSMContext):
         )
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🤖 مچ‌میکر هوشمند (AI Match)", callback_data="ai_matchmaker")],
             [InlineKeyboardButton(text="👤 مدیریت آگهی‌ها", callback_data="room_my_ads")],
             [InlineKeyboardButton(text="🔙 بازگشت", callback_data="roommate")]
         ])
@@ -2234,52 +2466,161 @@ async def add_ad_start(callback: types.CallbackQuery, state: FSMContext):
         await callback.answer()
         return
     
-    # شروع ثبت آگهی
+    # شروع ثبت آگهی با انتخاب چندگانه
+    initial_types = ["room"]
+    await state.update_data(selected_types=initial_types)
+    
     text = (
-        "📝 <b>ثبت آگهی جدید</b>\n\n"
+        "📝 <b>ثبت آگهی جدید هم‌خانه و مسکن</b>\n\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        "🏠 <b>مرحله 1 از 13</b>\n\n"
-        "نوع آگهی را انتخاب کنید:"
+        "🏠 <b>مرحله 1 از 13: نوع ملک / آگهی</b>\n\n"
+        "می‌توانید یک یا چند گزینه را همزمان انتخاب کنید (روی گزینه‌ها کلیک کنید تا تیک بخورند):\n\n"
+        "💡 <i>مثلاً اگر هم برای اتاق و هم کل آپارتمان یا استودیو مناسب هستید، همه را علامت بزنید.</i>"
     )
     
-    buttons = []
-    for key, label in AD_TYPES.items():
+    def get_ad_type_select_keyboard(selected_types: list) -> InlineKeyboardMarkup:
+        buttons = []
+        for key, label in AD_TYPES.items():
+            is_sel = key in selected_types
+            check = "✅ " if is_sel else "⬜ "
+            buttons.append([
+                InlineKeyboardButton(text=f"{check}{label}", callback_data=f"add_toggle_type_{key}")
+            ])
+        
+        all_housing = ["room", "apartment", "studio"]
+        is_all = all(k in selected_types for k in all_housing)
+        check_all = "✅ " if is_all else "✨ "
         buttons.append([
-            InlineKeyboardButton(text=label, callback_data=f"add_type_{key}")
+            InlineKeyboardButton(
+                text=f"{check_all}انتخاب همه موارد مسکن (اتاق + آپارتمان + استودیو)", 
+                callback_data="add_toggle_type_all"
+            )
         ])
+        
+        count = len(selected_types)
+        btn_text = f"➡️ تأیید و مرحله بعد ({count} مورد)" if count > 0 else "⚠️ لطفاً حداقل ۱ گزینه را انتخاب کنید"
+        buttons.append([
+            InlineKeyboardButton(text=btn_text, callback_data="add_types_confirm")
+        ])
+        buttons.append([
+            InlineKeyboardButton(text="❌ انصراف و بازگشت", callback_data="roommate")
+        ])
+        return InlineKeyboardMarkup(inline_keyboard=buttons)
     
-    buttons.append([
-        InlineKeyboardButton(text="❌ لغو", callback_data="roommate")
-    ])
-    
-    keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
-    
+    keyboard = get_ad_type_select_keyboard(initial_types)
     await safe_edit_message(callback.message, text, keyboard)
     await callback.answer()
 
 
 # ───────────────────────────────────────────────────────────────────
-# مرحله 1: نوع آگهی
+# مرحله 1: نوع آگهی (پشتیبانی از انتخاب چندگانه)
 # ───────────────────────────────────────────────────────────────────
 
-@router.callback_query(F.data.startswith("add_type_"))
-async def add_select_type(callback: types.CallbackQuery, state: FSMContext):
-    """انتخاب نوع آگهی"""
+@router.callback_query(F.data.startswith("add_toggle_type_"))
+async def add_toggle_type(callback: types.CallbackQuery, state: FSMContext):
+    """تغییر وضعیت تیک گزینه‌های نوع آگهی"""
+    key = callback.data.replace("add_toggle_type_", "")
+    data = await state.get_data()
+    selected_types = list(data.get("selected_types", ["room"]))
     
-    ad_type = callback.data.replace("add_type_", "")
-    ad_type_label = AD_TYPES.get(ad_type, ad_type)
+    if key == "all":
+        all_housing = ["room", "apartment", "studio"]
+        if all(k in selected_types for k in all_housing):
+            selected_types = ["room"]
+        else:
+            for h in all_housing:
+                if h not in selected_types:
+                    selected_types.append(h)
+    else:
+        if key in selected_types:
+            selected_types.remove(key)
+        else:
+            selected_types.append(key)
+            
+    await state.update_data(selected_types=selected_types)
     
-    await state.update_data(ad_type=ad_type)
+    # ساخت مجدد کیبورد
+    buttons = []
+    for k, label in AD_TYPES.items():
+        is_sel = k in selected_types
+        check = "✅ " if is_sel else "⬜ "
+        buttons.append([
+            InlineKeyboardButton(text=f"{check}{label}", callback_data=f"add_toggle_type_{k}")
+        ])
+    
+    all_housing = ["room", "apartment", "studio"]
+    is_all = all(k in selected_types for k in all_housing)
+    check_all = "✅ " if is_all else "✨ "
+    buttons.append([
+        InlineKeyboardButton(
+            text=f"{check_all}انتخاب همه موارد مسکن (اتاق + آپارتمان + استودیو)", 
+            callback_data="add_toggle_type_all"
+        )
+    ])
+    
+    count = len(selected_types)
+    btn_text = f"➡️ تأیید و مرحله بعد ({count} مورد)" if count > 0 else "⚠️ لطفاً حداقل ۱ گزینه را انتخاب کنید"
+    buttons.append([
+        InlineKeyboardButton(text=btn_text, callback_data="add_types_confirm")
+    ])
+    buttons.append([
+        InlineKeyboardButton(text="❌ انصراف و بازگشت", callback_data="roommate")
+    ])
+    
+    text = (
+        "📝 <b>ثبت آگهی جدید هم‌خانه و مسکن</b>\n\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        "🏠 <b>مرحله 1 از 13: نوع ملک / آگهی</b>\n\n"
+        "می‌توانید یک یا چند گزینه را همزمان انتخاب کنید (روی گزینه‌ها کلیک کنید تا تیک بخورند):\n\n"
+        "💡 <i>مثلاً اگر هم برای اتاق و هم کل آپارتمان یا استودیو مناسب هستید، همه را علامت بزنید.</i>"
+    )
+    await safe_edit_message(callback.message, text, InlineKeyboardMarkup(inline_keyboard=buttons))
+    await callback.answer()
+
+
+@router.callback_query(F.data == "add_types_confirm")
+async def add_types_confirm(callback: types.CallbackQuery, state: FSMContext):
+    """تأیید نهایی انواع انتخابی و رفتن به مرحله نام"""
+    data = await state.get_data()
+    selected_types = data.get("selected_types", [])
+    if not selected_types:
+        await callback.answer("⚠️ لطفاً حداقل یکی از گزینه‌ها را تیک بزنید!", show_alert=True)
+        return
+        
+    labels = [AD_TYPES[k] for k in selected_types if k in AD_TYPES]
+    ad_type_label = " | ".join(labels)
+    primary_type = selected_types[0]
+    
+    await state.update_data(ad_type=ad_type_label, primary_type=primary_type)
     await state.set_state(RoommateState.waiting_name)
     
     text = (
-        f"✅ نوع آگهی: {ad_type_label}\n\n"
+        f"✅ نوع انتخابی: <b>{ad_type_label}</b>\n\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        "👤 <b>مرحله 2 از 13</b>\n\n"
+        "نام خود را وارد کنید:\n\n"
+        "💡 این نام در آگهی به دیگران نمایش داده می‌شود."
+    )
+    await safe_edit_message(callback.message, text, None)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("add_type_"))
+async def add_select_type(callback: types.CallbackQuery, state: FSMContext):
+    """پشتیبانی تک‌انتخابی برای سازگاری"""
+    ad_type = callback.data.replace("add_type_", "")
+    ad_type_label = AD_TYPES.get(ad_type, ad_type)
+    
+    await state.update_data(ad_type=ad_type_label, primary_type=ad_type, selected_types=[ad_type])
+    await state.set_state(RoommateState.waiting_name)
+    
+    text = (
+        f"✅ نوع آگهی: <b>{ad_type_label}</b>\n\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
         "👤 <b>مرحله 2 از 13</b>\n\n"
         "نام خود را وارد کنید:\n\n"
         "💡 این نام به دیگران نمایش داده می‌شود."
     )
-    
     await safe_edit_message(callback.message, text, None)
     await callback.answer()
 
@@ -2340,6 +2681,7 @@ async def add_process_age(message: types.Message, state: FSMContext):
     await state.set_state(RoommateState.waiting_gender)
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🤖 مچ‌میکر هوشمند (AI Match)", callback_data="ai_matchmaker")],
         [
             InlineKeyboardButton(text="👨 آقا", callback_data="add_gender_آقا"),
             InlineKeyboardButton(text="👩 خانم", callback_data="add_gender_خانم")
@@ -2515,6 +2857,7 @@ async def add_process_house_size(message: types.Message, state: FSMContext):
     await state.set_state(RoommateState.waiting_room_count)
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🤖 مچ‌میکر هوشمند (AI Match)", callback_data="ai_matchmaker")],
         [
             InlineKeyboardButton(text="1️⃣", callback_data="add_rooms_1"),
             InlineKeyboardButton(text="2️⃣", callback_data="add_rooms_2"),
@@ -2584,6 +2927,7 @@ async def add_process_bed_type(callback: types.CallbackQuery, state: FSMContext)
     await state.set_state(RoommateState.waiting_available_from)
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🤖 مچ‌میکر هوشمند (AI Match)", callback_data="ai_matchmaker")],
         [InlineKeyboardButton(text="📅 فوری (همین الان)", callback_data="add_avail_فوری")],
         [InlineKeyboardButton(text="📅 از هفته آینده", callback_data="add_avail_هفته آینده")],
         [InlineKeyboardButton(text="📅 از ماه آینده", callback_data="add_avail_ماه آینده")],
@@ -2655,6 +2999,7 @@ async def show_min_stay_step(callback, state: FSMContext):
     await state.set_state(RoommateState.waiting_min_stay)
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🤖 مچ‌میکر هوشمند (AI Match)", callback_data="ai_matchmaker")],
         [
             InlineKeyboardButton(text="1 ماه", callback_data="add_stay_1 ماه"),
             InlineKeyboardButton(text="3 ماه", callback_data="add_stay_3 ماه")
@@ -2696,6 +3041,7 @@ async def add_process_min_stay(callback: types.CallbackQuery, state: FSMContext)
     await state.set_state(RoommateState.waiting_smoking)
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🤖 مچ‌میکر هوشمند (AI Match)", callback_data="ai_matchmaker")],
         [InlineKeyboardButton(text="🚭 ممنوع", callback_data="add_smoke_ممنوع")],
         [InlineKeyboardButton(text="🚬 مجاز", callback_data="add_smoke_مجاز")],
         [InlineKeyboardButton(text="🌬️ فقط در بالکن", callback_data="add_smoke_فقط بالکن")]
@@ -2726,6 +3072,7 @@ async def add_process_smoking(callback: types.CallbackQuery, state: FSMContext):
     await state.set_state(RoommateState.waiting_pets)
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🤖 مچ‌میکر هوشمند (AI Match)", callback_data="ai_matchmaker")],
         [InlineKeyboardButton(text="🚫 ندارم / ممنوع", callback_data="add_pet_ندارم")],
         [InlineKeyboardButton(text="🐕 دارم", callback_data="add_pet_دارم")],
         [InlineKeyboardButton(text="✅ مشکلی ندارم", callback_data="add_pet_مشکلی ندارم")]
@@ -2809,6 +3156,7 @@ async def add_process_amenities(callback: types.CallbackQuery, state: FSMContext
         await state.update_data(photos=[])
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🤖 مچ‌میکر هوشمند (AI Match)", callback_data="ai_matchmaker")],
             [InlineKeyboardButton(text="⏭ رد کردن (بدون عکس)", callback_data="add_photo_skip")]
         ])
         
@@ -2867,6 +3215,7 @@ async def add_process_photo(message: types.Message, state: FSMContext):
         remaining = MAX_PHOTOS - len(photos)
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🤖 مچ‌میکر هوشمند (AI Match)", callback_data="ai_matchmaker")],
             [InlineKeyboardButton(text="✅ کافیه، ادامه بده", callback_data="add_photo_done")],
             [InlineKeyboardButton(text=f"➕ عکس بیشتر ({remaining} باقیمانده)", callback_data="add_photo_more")]
         ])
@@ -2986,6 +3335,7 @@ async def add_process_desc(message: types.Message, state: FSMContext):
     text += "\n✅ آگهی شما را ثبت کنم؟"
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🤖 مچ‌میکر هوشمند (AI Match)", callback_data="ai_matchmaker")],
         [
             InlineKeyboardButton(text="✅ تأیید و ثبت", callback_data="add_confirm_yes"),
             InlineKeyboardButton(text="❌ لغو", callback_data="add_confirm_no")
@@ -3008,7 +3358,7 @@ async def add_confirm_submit(callback: types.CallbackQuery, state: FSMContext):
     data = await state.get_data()
     
     # بارگذاری آگهی‌ها
-    all_ads = load_roommates()
+    all_ads = await load_roommates()
     
     # ساخت ID جدید
     if all_ads:
@@ -3052,7 +3402,7 @@ async def add_confirm_submit(callback: types.CallbackQuery, state: FSMContext):
     
     # ذخیره
     all_ads.append(new_ad)
-    save_json(ROOM_JSON, all_ads)
+    await save_json("roommates", all_ads)
     
     # اطلاع به ادمین
     await notify_admin_new_ad(callback.message.bot, new_ad)
@@ -3069,6 +3419,7 @@ async def add_confirm_submit(callback: types.CallbackQuery, state: FSMContext):
     )
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🤖 مچ‌میکر هوشمند (AI Match)", callback_data="ai_matchmaker")],
         [InlineKeyboardButton(text="👤 آگهی‌های من", callback_data="room_my_ads")],
         [InlineKeyboardButton(text="🏠 منوی اصلی", callback_data="roommate")]
     ])
@@ -3098,6 +3449,7 @@ async def notify_admin_new_ad(bot: Bot, ad: dict):
     )
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🤖 مچ‌میکر هوشمند (AI Match)", callback_data="ai_matchmaker")],
         [
             InlineKeyboardButton(text="✅ تأیید", callback_data=f"adm_approve_{ad['id']}"),
             InlineKeyboardButton(text="🌟 تأیید ویژه", callback_data=f"adm_premium_{ad['id']}")
@@ -3118,6 +3470,7 @@ async def add_confirm_cancel(callback: types.CallbackQuery, state: FSMContext):
     text = "❌ <b>ثبت آگهی لغو شد.</b>"
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🤖 مچ‌میکر هوشمند (AI Match)", callback_data="ai_matchmaker")],
         [InlineKeyboardButton(text="📝 ثبت مجدد", callback_data="room_add_start")],
         [InlineKeyboardButton(text="🏠 منوی اصلی", callback_data="roommate")]
     ])
@@ -3139,6 +3492,7 @@ async def add_confirm_edit(callback: types.CallbackQuery, state: FSMContext):
     )
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🤖 مچ‌میکر هوشمند (AI Match)", callback_data="ai_matchmaker")],
         [InlineKeyboardButton(text="🔄 شروع از اول", callback_data="room_add_start")],
         [InlineKeyboardButton(text="✅ ثبت همین آگهی", callback_data="add_confirm_yes")],
         [InlineKeyboardButton(text="❌ لغو", callback_data="roommate")]
@@ -3166,7 +3520,7 @@ async def show_my_ads(callback: types.CallbackQuery):
     
     user_id = callback.from_user.id
     
-    all_ads = load_roommates()
+    all_ads = await load_roommates()
     my_ads = [ad for ad in all_ads if ad.get("user_id") == user_id]
     
     if not my_ads:
@@ -3177,6 +3531,7 @@ async def show_my_ads(callback: types.CallbackQuery):
         )
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🤖 مچ‌میکر هوشمند (AI Match)", callback_data="ai_matchmaker")],
             [InlineKeyboardButton(text="📝 ثبت آگهی جدید", callback_data="room_add_start")],
             [InlineKeyboardButton(text="🔙 بازگشت", callback_data="roommate")]
         ])
@@ -3258,7 +3613,7 @@ async def manage_ad(callback: types.CallbackQuery):
     
     ad_id = int(callback.data.replace("room_manage_", ""))
     
-    all_ads = load_roommates()
+    all_ads = await load_roommates()
     ad = next((a for a in all_ads if a["id"] == ad_id), None)
     
     if not ad:
@@ -3388,14 +3743,14 @@ async def mark_as_found(callback: types.CallbackQuery):
     
     ad_id = int(callback.data.replace("room_found_", ""))
     
-    all_ads = load_roommates()
+    all_ads = await load_roommates()
     
     for ad in all_ads:
         if ad["id"] == ad_id and ad.get("user_id") == callback.from_user.id:
             ad["is_found"] = True
             ad["active"] = False
             ad["found_date"] = datetime.now().strftime("%Y-%m-%d")
-            save_json(ROOM_JSON, all_ads)
+            await save_json("roommates", all_ads)
             
             await callback.answer("🎉 تبریک! امیدوارم هم‌خانه خوبی پیدا کرده باشید!", show_alert=True)
             
@@ -3417,12 +3772,12 @@ async def deactivate_ad(callback: types.CallbackQuery):
     
     ad_id = int(callback.data.replace("room_deactivate_", ""))
     
-    all_ads = load_roommates()
+    all_ads = await load_roommates()
     
     for ad in all_ads:
         if ad["id"] == ad_id and ad.get("user_id") == callback.from_user.id:
             ad["active"] = False
-            save_json(ROOM_JSON, all_ads)
+            await save_json("roommates", all_ads)
             
             await callback.answer("💤 آگهی غیرفعال شد", show_alert=True)
             
@@ -3443,7 +3798,7 @@ async def reactivate_ad(callback: types.CallbackQuery):
     
     ad_id = int(callback.data.replace("room_reactivate_", ""))
     
-    all_ads = load_roommates()
+    all_ads = await load_roommates()
     
     for ad in all_ads:
         if ad["id"] == ad_id and ad.get("user_id") == callback.from_user.id:
@@ -3471,7 +3826,7 @@ async def reactivate_ad(callback: types.CallbackQuery):
             ad["date"] = datetime.now().strftime("%Y-%m-%d")
             ad["renewal_count"] = ad.get("renewal_count", 0) + 1
             
-            save_json(ROOM_JSON, all_ads)
+            await save_json("roommates", all_ads)
             
             await callback.answer("✅ آگهی فعال شد!", show_alert=True)
             
@@ -3492,7 +3847,7 @@ async def renew_ad(callback: types.CallbackQuery):
     
     ad_id = int(callback.data.replace("room_renew_", ""))
     
-    all_ads = load_roommates()
+    all_ads = await load_roommates()
     
     for ad in all_ads:
         if ad["id"] == ad_id and ad.get("user_id") == callback.from_user.id:
@@ -3500,7 +3855,7 @@ async def renew_ad(callback: types.CallbackQuery):
             ad["renewal_count"] = ad.get("renewal_count", 0) + 1
             ad["expired"] = False
             
-            save_json(ROOM_JSON, all_ads)
+            await save_json("roommates", all_ads)
             
             await callback.answer(
                 f"🔄 آگهی برای {EXPIRATION_DAYS} روز دیگر تمدید شد!",
@@ -3531,6 +3886,7 @@ async def delete_ad_confirm(callback: types.CallbackQuery):
     )
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🤖 مچ‌میکر هوشمند (AI Match)", callback_data="ai_matchmaker")],
         [
             InlineKeyboardButton(
                 text="✅ بله، حذف کن",
@@ -3553,7 +3909,7 @@ async def delete_ad_execute(callback: types.CallbackQuery):
     
     ad_id = int(callback.data.replace("room_delete_confirm_", ""))
     
-    all_ads = load_roommates()
+    all_ads = await load_roommates()
     
     # پیدا کردن و حذف
     new_ads = []
@@ -3580,7 +3936,7 @@ async def delete_ad_execute(callback: types.CallbackQuery):
             new_ads.append(ad)
     
     if deleted:
-        save_json(ROOM_JSON, new_ads)
+        await save_json("roommates", new_ads)
         await callback.answer("🗑 آگهی حذف شد!", show_alert=True)
     else:
         await callback.answer("⚠️ خطا در حذف", show_alert=True)
@@ -3600,7 +3956,7 @@ async def edit_ad_menu(callback: types.CallbackQuery, state: FSMContext):
     
     ad_id = int(callback.data.replace("room_edit_", ""))
     
-    all_ads = load_roommates()
+    all_ads = await load_roommates()
     ad = next((a for a in all_ads if a["id"] == ad_id), None)
     
     if not ad or ad.get("user_id") != callback.from_user.id:
@@ -3615,6 +3971,7 @@ async def edit_ad_menu(callback: types.CallbackQuery, state: FSMContext):
     )
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🤖 مچ‌میکر هوشمند (AI Match)", callback_data="ai_matchmaker")],
         [InlineKeyboardButton(text=f"💰 اجاره ({ad.get('budget')}€)", callback_data="edit_field_budget")],
         [InlineKeyboardButton(text=f"📍 منطقه ({ad.get('area')})", callback_data="edit_field_area")],
         [InlineKeyboardButton(text=f"📐 متراژ ({ad.get('house_size')}m²)", callback_data="edit_field_size")],
@@ -3647,6 +4004,7 @@ async def edit_field_start(callback: types.CallbackQuery, state: FSMContext):
     text = prompts.get(field, "مقدار جدید را وارد کنید:")
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🤖 مچ‌میکر هوشمند (AI Match)", callback_data="ai_matchmaker")],
         [InlineKeyboardButton(text="❌ لغو", callback_data="edit_cancel")]
     ])
     
@@ -3663,7 +4021,7 @@ async def edit_field_process(message: types.Message, state: FSMContext):
     field = data.get("editing_field")
     new_value = message.text.strip()
     
-    all_ads = load_roommates()
+    all_ads = await load_roommates()
     
     for ad in all_ads:
         if ad["id"] == ad_id and ad.get("user_id") == message.from_user.id:
@@ -3697,11 +4055,12 @@ async def edit_field_process(message: types.Message, state: FSMContext):
             elif field == "available":
                 ad["available_from"] = new_value
             
-            save_json(ROOM_JSON, all_ads)
+            await save_json("roommates", all_ads)
             
             await state.clear()
             
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🤖 مچ‌میکر هوشمند (AI Match)", callback_data="ai_matchmaker")],
                 [InlineKeyboardButton(text="✏️ ویرایش بیشتر", callback_data=f"room_edit_{ad_id}")],
                 [InlineKeyboardButton(text="🔙 مدیریت آگهی", callback_data=f"room_manage_{ad_id}")]
             ])
@@ -3745,7 +4104,7 @@ async def alert_menu(callback: types.CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
     
     # بارگذاری هشدارهای کاربر
-    alerts = load_json(ALERTS_JSON)
+    alerts = await load_json("room_alerts")
     user_alerts = [a for a in alerts if a.get("user_id") == user_id]
     
     text = (
@@ -3768,6 +4127,7 @@ async def alert_menu(callback: types.CallbackQuery, state: FSMContext):
         text += "\n"
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🤖 مچ‌میکر هوشمند (AI Match)", callback_data="ai_matchmaker")],
         [InlineKeyboardButton(text="➕ افزودن هشدار جدید", callback_data="alert_add_start")],
         [InlineKeyboardButton(text="🗑 حذف همه هشدارها", callback_data="alert_delete_all")] if user_alerts else [],
         [InlineKeyboardButton(text="🔙 بازگشت", callback_data="roommate")]
@@ -3784,6 +4144,7 @@ async def alert_add_start(callback: types.CallbackQuery, state: FSMContext):
     await state.set_state(RoommateState.alert_gender)
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🤖 مچ‌میکر هوشمند (AI Match)", callback_data="ai_matchmaker")],
         [
             InlineKeyboardButton(text="👨 آقا", callback_data="alert_gender_آقا"),
             InlineKeyboardButton(text="👩 خانم", callback_data="alert_gender_خانم")
@@ -3810,6 +4171,7 @@ async def alert_select_gender(callback: types.CallbackQuery, state: FSMContext):
     await state.set_state(RoommateState.alert_budget)
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🤖 مچ‌میکر هوشمند (AI Match)", callback_data="ai_matchmaker")],
         [
             InlineKeyboardButton(text="≤ 300€", callback_data="alert_budget_300"),
             InlineKeyboardButton(text="≤ 400€", callback_data="alert_budget_400")
@@ -3840,7 +4202,7 @@ async def alert_select_budget(callback: types.CallbackQuery, state: FSMContext):
     gender = data.get("alert_gender", "all")
     
     # ذخیره هشدار
-    alerts = load_json(ALERTS_JSON)
+    alerts = await load_json("room_alerts")
     
     new_alert = {
         "user_id": callback.from_user.id,
@@ -3851,7 +4213,7 @@ async def alert_select_budget(callback: types.CallbackQuery, state: FSMContext):
     }
     
     alerts.append(new_alert)
-    save_json(ALERTS_JSON, alerts)
+    await save_json("room_alerts", alerts)
     
     await state.clear()
     
@@ -3867,9 +4229,9 @@ async def alert_delete_all(callback: types.CallbackQuery):
     
     user_id = callback.from_user.id
     
-    alerts = load_json(ALERTS_JSON)
+    alerts = await load_json("room_alerts")
     alerts = [a for a in alerts if a.get("user_id") != user_id]
-    save_json(ALERTS_JSON, alerts)
+    await save_json("room_alerts", alerts)
     
     await callback.answer("🗑 همه هشدارها حذف شد!", show_alert=True)
     
@@ -3880,7 +4242,7 @@ async def alert_delete_all(callback: types.CallbackQuery):
 async def process_alerts_for_new_ad(bot: Bot, new_ad: dict):
     """بررسی و ارسال هشدار برای آگهی جدید"""
     
-    alerts = load_json(ALERTS_JSON)
+    alerts = await load_json("room_alerts")
     
     for alert in alerts:
         # بررسی تطابق
@@ -3914,6 +4276,7 @@ async def process_alerts_for_new_ad(bot: Bot, new_ad: dict):
             )
             
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🤖 مچ‌میکر هوشمند (AI Match)", callback_data="ai_matchmaker")],
                 [InlineKeyboardButton(
                     text="👁 مشاهده آگهی",
                     callback_data=f"room_view_{new_ad['id']}_1"
@@ -3937,23 +4300,21 @@ async def process_alerts_for_new_ad(bot: Bot, new_ad: dict):
 @router.callback_query(F.data.startswith("adm_approve_"))
 async def admin_approve_ad(callback: types.CallbackQuery):
     """تأیید آگهی توسط ادمین"""
-    
     if callback.from_user.id not in settings.ADMIN_CHAT_IDS:
         await callback.answer("⛔ دسترسی ندارید!", show_alert=True)
         return
     
-    ad_id = int(callback.data.replace("adm_approve_", ""))
-    
-    all_ads = load_roommates()
+    ad_id = str(callback.data.replace("adm_approve_", "")).strip()
+    all_ads = await load_roommates()
     
     for ad in all_ads:
-        if ad["id"] == ad_id:
+        if str(ad.get("id")) == str(ad_id):
             ad["status"] = "approved"
             ad["active"] = True
             ad["approved_by"] = callback.from_user.id
             ad["approved_date"] = datetime.now().strftime("%Y-%m-%d %H:%M")
             
-            save_json(ROOM_JSON, all_ads)
+            await save_json("roommates", all_ads)
             
             # اطلاع به کاربر
             try:
@@ -3965,24 +4326,24 @@ async def admin_approve_ad(callback: types.CallbackQuery):
                     "آگهی شما اکنون در لیست نمایش داده می‌شود.",
                     parse_mode="HTML"
                 )
-            except:
-                pass
+            except Exception as e:
+                logger.warning(f"Failed to notify user: {e}")
             
             # ارسال هشدار به کاربران
             await process_alerts_for_new_ad(callback.bot, ad)
             
             # بروزرسانی پیام ادمین
             try:
-                new_text = callback.message.text + "\n\n✅ تأیید شد"
                 if callback.message.caption:
-                    new_text = callback.message.caption + "\n\n✅ تأیید شد"
-                    await callback.message.edit_caption(caption=new_text, parse_mode="HTML")
-                else:
+                    new_caption = callback.message.caption + "\n\n✅ تأیید شد توسط ادمین"
+                    await callback.message.edit_caption(caption=new_caption, parse_mode="HTML")
+                elif callback.message.text:
+                    new_text = callback.message.text + "\n\n✅ تأیید شد توسط ادمین"
                     await callback.message.edit_text(new_text, parse_mode="HTML")
-            except:
-                pass
+            except Exception as e:
+                logger.warning(f"Could not edit message: {e}")
             
-            await callback.answer("✅ تأیید شد!")
+            await callback.answer("✅ آگهی با موفقیت تأیید شد!")
             return
     
     await callback.answer("⚠️ آگهی یافت نشد!", show_alert=True)
@@ -3991,98 +4352,95 @@ async def admin_approve_ad(callback: types.CallbackQuery):
 @router.callback_query(F.data.startswith("adm_premium_"))
 async def admin_approve_premium(callback: types.CallbackQuery):
     """تأیید آگهی به عنوان ویژه"""
-    
     if callback.from_user.id not in settings.ADMIN_CHAT_IDS:
-        await callback.answer("⛔", show_alert=True)
+        await callback.answer("⛔ دسترسی ندارید!", show_alert=True)
         return
     
-    ad_id = int(callback.data.replace("adm_premium_", ""))
-    
-    all_ads = load_roommates()
+    ad_id = str(callback.data.replace("adm_premium_", "")).strip()
+    all_ads = await load_roommates()
     
     for ad in all_ads:
-        if ad["id"] == ad_id:
+        if str(ad.get("id")) == str(ad_id):
             ad["status"] = "approved"
             ad["active"] = True
             ad["is_premium"] = True
             ad["approved_by"] = callback.from_user.id
+            ad["approved_date"] = datetime.now().strftime("%Y-%m-%d %H:%M")
             
-            save_json(ROOM_JSON, all_ads)
+            await save_json("roommates", all_ads)
             
             try:
                 await callback.bot.send_message(
                     ad["user_id"],
                     f"🌟 <b>آگهی شما به عنوان ویژه تأیید شد!</b>\n\n"
                     f"🆔 شماره: #{ad_id}\n"
-                    "آگهی شما در بالای لیست نمایش داده می‌شود!",
+                    "آگهی شما با اولویت بالا و ستاره‌دار در بالای لیست نمایش داده می‌شود!",
                     parse_mode="HTML"
                 )
-            except:
-                pass
+            except Exception as e:
+                logger.warning(f"Failed to notify user: {e}")
             
             await process_alerts_for_new_ad(callback.bot, ad)
             
             try:
-                new_text = callback.message.text + "\n\n🌟 تأیید ویژه"
                 if callback.message.caption:
-                    new_text = callback.message.caption + "\n\n🌟 تأیید ویژه"
-                    await callback.message.edit_caption(caption=new_text, parse_mode="HTML")
-                else:
+                    new_caption = callback.message.caption + "\n\n🌟 تأیید ویژه شد"
+                    await callback.message.edit_caption(caption=new_caption, parse_mode="HTML")
+                elif callback.message.text:
+                    new_text = callback.message.text + "\n\n🌟 تأیید ویژه شد"
                     await callback.message.edit_text(new_text, parse_mode="HTML")
-            except:
-                pass
+            except Exception as e:
+                logger.warning(f"Could not edit message: {e}")
             
-            await callback.answer("🌟 تأیید ویژه!")
+            await callback.answer("🌟 تأیید ویژه ثبت شد!")
             return
     
-    await callback.answer("⚠️ یافت نشد!", show_alert=True)
+    await callback.answer("⚠️ آگهی یافت نشد!", show_alert=True)
 
 
 @router.callback_query(F.data.startswith("adm_reject_"))
 async def admin_reject_ad(callback: types.CallbackQuery):
     """رد آگهی توسط ادمین"""
-    
     if callback.from_user.id not in settings.ADMIN_CHAT_IDS:
-        await callback.answer("⛔", show_alert=True)
+        await callback.answer("⛔ دسترسی ندارید!", show_alert=True)
         return
     
-    ad_id = int(callback.data.replace("adm_reject_", ""))
-    
-    all_ads = load_roommates()
+    ad_id = str(callback.data.replace("adm_reject_", "")).strip()
+    all_ads = await load_roommates()
     
     for ad in all_ads:
-        if ad["id"] == ad_id:
+        if str(ad.get("id")) == str(ad_id):
             ad["status"] = "rejected"
             ad["active"] = False
             ad["rejected_by"] = callback.from_user.id
             
-            save_json(ROOM_JSON, all_ads)
+            await save_json("roommates", all_ads)
             
             try:
                 await callback.bot.send_message(
                     ad["user_id"],
                     f"❌ <b>آگهی شما رد شد</b>\n\n"
                     f"🆔 شماره: #{ad_id}\n\n"
-                    "لطفاً قوانین را مطالعه کرده و مجدد تلاش کنید.",
+                    "لطفاً مشخصات یا عکس‌ها را بررسی کرده و مجدد ثبت کنید.",
                     parse_mode="HTML"
                 )
-            except:
-                pass
+            except Exception as e:
+                logger.warning(f"Failed to notify user: {e}")
             
             try:
-                new_text = callback.message.text + "\n\n❌ رد شد"
                 if callback.message.caption:
-                    new_text = callback.message.caption + "\n\n❌ رد شد"
-                    await callback.message.edit_caption(caption=new_text, parse_mode="HTML")
-                else:
+                    new_caption = callback.message.caption + "\n\n❌ رد شد توسط ادمین"
+                    await callback.message.edit_caption(caption=new_caption, parse_mode="HTML")
+                elif callback.message.text:
+                    new_text = callback.message.text + "\n\n❌ رد شد توسط ادمین"
                     await callback.message.edit_text(new_text, parse_mode="HTML")
-            except:
-                pass
+            except Exception as e:
+                logger.warning(f"Could not edit message: {e}")
             
-            await callback.answer("❌ رد شد!")
+            await callback.answer("❌ آگهی رد شد.")
             return
-    
-    await callback.answer("⚠️ یافت نشد!", show_alert=True)
+            
+    await callback.answer("⚠️ آگهی یافت نشد!", show_alert=True)
 
 
 @router.callback_query(F.data.startswith("adm_delete_"))
@@ -4095,7 +4453,7 @@ async def admin_delete_ad(callback: types.CallbackQuery):
     
     ad_id = int(callback.data.replace("adm_delete_", ""))
     
-    all_ads = load_roommates()
+    all_ads = await load_roommates()
     
     deleted_ad = None
     new_ads = []
@@ -4107,7 +4465,7 @@ async def admin_delete_ad(callback: types.CallbackQuery):
             new_ads.append(ad)
     
     if deleted_ad:
-        save_json(ROOM_JSON, new_ads)
+        await save_json("roommates", new_ads)
         
         try:
             await callback.bot.send_message(
@@ -4135,12 +4493,12 @@ async def admin_dismiss_report(callback: types.CallbackQuery):
     
     ad_id = int(callback.data.replace("adm_dismiss_report_", ""))
     
-    all_ads = load_roommates()
+    all_ads = await load_roommates()
     
     for ad in all_ads:
         if ad["id"] == ad_id:
             ad["reports"] = []
-            save_json(ROOM_JSON, all_ads)
+            await save_json("roommates", all_ads)
             break
     
     try:
@@ -4164,7 +4522,7 @@ async def admin_dashboard(callback: types.CallbackQuery):
         await callback.answer("⛔", show_alert=True)
         return
     
-    all_ads = load_roommates()
+    all_ads = await load_roommates()
     
     total = len(all_ads)
     active = sum(1 for a in all_ads if a.get("active") and a.get("status") == "approved")
@@ -4193,6 +4551,7 @@ async def admin_dashboard(callback: types.CallbackQuery):
     )
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🤖 مچ‌میکر هوشمند (AI Match)", callback_data="ai_matchmaker")],
         [InlineKeyboardButton(text=f"⏳ در انتظار ({pending})", callback_data="adm_list_pending")],
         [InlineKeyboardButton(text=f"🚨 گزارش شده ({reported})", callback_data="adm_list_reported")],
         [InlineKeyboardButton(text="🔙 بازگشت", callback_data="roommate")]
@@ -4205,3 +4564,35 @@ async def admin_dashboard(callback: types.CallbackQuery):
 # ═══════════════════════════════════════════════════════════════════
 # پایان بخش 5 و پایان فایل
 # ═══════════════════════════════════════════════════════════════════
+
+@router.callback_query(F.data == "ai_matchmaker")
+async def ai_matchmaker_start(callback: types.CallbackQuery, state: FSMContext):
+    await callback.message.answer("🤖 <b>مچ‌میکر هوشمند هم‌اتاقی</b>\nلطفاً ۳ ویژگی مهم خود و هم‌اتاقی ایده‌آلتان را بنویسید:\nمثال: من زود می‌خوابم، سیگاری نیستم و خیلی تمیزم.", parse_mode="HTML")
+    await state.set_state("waiting_for_match_traits")
+
+@router.message(StateFilter("waiting_for_match_traits"))
+async def process_matchmaker(message: types.Message, state: FSMContext):
+    user_traits = message.text
+    loading = await message.answer("🔄 هوش مصنوعی در حال بررسی تمام پروفایل‌ها و یافتن بهترین هم‌اتاقی برای شماست...")
+    
+    roommates = await load_roommates()
+    if not roommates:
+        await loading.edit_text("هیچ آگهی هم‌اتاقی ثبت نشده است.")
+        await state.clear()
+        return
+        
+    # Construct a prompt for AI
+    profiles = ""
+    for r in roommates[:10]: # Check last 10 for demo purposes
+        profiles += f"Profile ID {r['id']}: {r['description']}\n"
+        
+    prompt = f"من این ویژگی‌ها را دارم: {user_traits}\nدر بین پروفایل‌های زیر، بهترین هم‌اتاقی را برای من پیدا کن و درصد تطابق را بگو و دلیلش را توضیح بده:\n\n{profiles}"
+    
+    try:
+        from services.ai_service import ai_service
+        response = await ai_service.chat(prompt, context="student_assistant")
+        await loading.edit_text(f"🎯 <b>نتیجه مچ‌میکینگ هوش مصنوعی:</b>\n\n{response.text}", parse_mode="HTML")
+    except Exception as e:
+        await loading.edit_text(f"⚠️ خطا در ارتباط با هوش مصنوعی.")
+        
+    await state.clear()

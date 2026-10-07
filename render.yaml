@@ -1,0 +1,53 @@
+# Render Blueprint - SmartStudentBot & Telegram Mini App
+# معماری یکپارچه کل پروژه روی Render (100% رایگان)
+
+services:
+  # ۱. سرویس ربات تلگرام (Python FastAPI / aiogram)
+  - type: web
+    name: smartstudentbot-backend
+    env: python
+    rootDir: SmartStudentBot
+    plan: free
+    region: frankfurt # نزدیک‌ترین ریجن به اروپا و ایران
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    healthCheckPath: /health
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: PORT
+        value: 8000
+      - key: BOT_ID
+        value: perugia
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: ADMIN_CHAT_IDS
+        value: "81484049,7801271819"
+      - key: WEBHOOK_SECRET
+        generateValue: true
+      - key: MONGO_URI
+        sync: false
+      - key: OPENWEATHERMAP_API_KEY
+        sync: false
+      - key: BASE_URL
+        fromService:
+          type: web
+          name: smartstudentbot-backend
+          property: host
+      - key: WEBAPP_URL
+        fromService:
+          type: web
+          name: smartstudentbot-webapp
+          property: url
+
+  # ۲. سرویس وب‌اپلیکیشن و مینی‌اپ تلگرام (React Vite Static Site - بدون خوابیدن)
+  - type: web
+    name: smartstudentbot-webapp
+    env: static
+    rootDir: SmartStudentBot/webapp
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html

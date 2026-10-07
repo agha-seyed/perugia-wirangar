@@ -84,6 +84,9 @@ class Settings:
     # آدرس پایه سرور (برای webhook)
     BASE_URL: str = os.getenv("BASE_URL", "http://localhost:8000").strip().rstrip("/")
     
+    # آدرس وب‌اپلیکیشن (Telegram Mini App URL)
+    WEBAPP_URL: str = os.getenv("WEBAPP_URL", "https://smartstudentbot-perugia.vercel.app").strip().rstrip("/")
+    
     # پورت سرور
     PORT: int = int(os.getenv("PORT", "8000"))
     
@@ -91,11 +94,14 @@ class Settings:
     # تنظیمات دیتابیس
     # ═══════════════════════════════════════════════════════════════════════════
     
-    # PostgreSQL
-    DATABASE_URL: str = os.getenv(
-        "DATABASE_URL",
-        "postgresql+asyncpg://smartstudentbot:supersecretpassword123@postgres:5432/smartstudentbot"
+    # MongoDB Connection String (ضروری برای Render)
+    MONGO_URI: str = os.getenv(
+        "MONGO_URI",
+        "mongodb://localhost:27017/"
     )
+    
+    # Gemini API Key (هوش مصنوعی رایگان گوگل)
+    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "").strip()
     
     # Redis (برای کش و session)
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://redis:6379")
@@ -120,6 +126,20 @@ class Settings:
     
     # نرخ ارز
     EXCHANGE_RATE_API_KEY: str = os.getenv("EXCHANGE_RATE_API_KEY", "").strip()
+    
+    @property
+    def NAVASAN_API_KEYS(self) -> List[str]:
+        """کلیدهای چرخشی برای دریافت لحظه‌ای نرخ ارز از Navasan"""
+        keys = os.getenv("NAVASAN_API_KEYS", "").strip()
+        if keys:
+            return [k.strip() for k in keys.split(",") if k.strip()]
+        return [
+            "freepnP0B5PJNRJD5XUTFauKTpubrxE2",
+            "freeWVcwTB4Xq8yT48Y0YHgCy8JcvulU",
+            "freezW677iqPcZxRFwQbpX0iZQfxaWwi",
+            "freeb2n6GMnQA0IIxbKUX3y9BC51Cn2N",
+            "freeZjQukbJZKuek0fWGgww8C8bf2wG4",
+        ]
     
     # ═══════════════════════════════════════════════════════════════════════════
     # تنظیمات AI - Voice (پیام صوتی)

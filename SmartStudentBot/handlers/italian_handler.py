@@ -63,28 +63,58 @@ class ItalianState(StatesGroup):
     # وضعیت‌های مربوط به آزمون
     in_quiz = State()
 
+try:
+    from handlers.cmd_start import get_user_lang, get_text, get_user_lang_code
+except ImportError:
+    def get_user_lang(user_id: int) -> dict: return {}
+    def get_text(lang: dict, key: str, default: str = "") -> str: return default
+    def get_user_lang_code(user_id: int) -> str: return "fa"
+
 # ---------------------------------------------------------
 # 3. منوی اصلی (Main Menu)
 # ---------------------------------------------------------
 
-@router.callback_query(lambda c: c.data == "italy")
+@router.callback_query(lambda c: c.data in ["italy", "italian"])
 async def italian_main(callback: types.CallbackQuery, state: FSMContext):
-    """منوی اصلی بخش ایتالیایی"""
+    """منوی اصلی بخش ایتالیایی چندزبانه"""
     await state.clear()
+    user_id = callback.from_user.id
+    lang_code = get_user_lang_code(user_id)
     
-    text = "🇮🇹 <b>آموزش جامع زبان ایتالیایی (پروجا)</b>\n\n"
-    text += "🎓 به آکادمی هوشمند خوش آمدید!\n"
-    text += "اینجا می‌تونی با روش‌های مدرن زبان یاد بگیری. از کجا شروع کنیم؟\n\n"
+    if lang_code == "it":
+        text = "🇮🇹 <b>Accademia della Lingua Italiana (Perugia)</b>\n\n"
+        text += "🎓 Benvenuto nell'hub intelligente per imparare l'italiano!\n"
+        text += "Da dove vuoi iniziare oggi?\n\n"
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📚 Lezioni Graduate (A1-B1)", callback_data="it_menu_lessons")],
+            [InlineKeyboardButton(text="📖 Grammatica e Regole (A1-B1)", callback_data="it_menu_grammar")],
+            [InlineKeyboardButton(text="🃏 Flashcard Vocabolario (con audio 🔊)", callback_data="italian_flashcard")],
+            [InlineKeyboardButton(text="🧠 Quiz e Test di Livello", callback_data="italian_quiz")],
+            [InlineKeyboardButton(text="🏠 Menu Principale", callback_data="main_menu")]
+        ])
+    elif lang_code == "en":
+        text = "🇮🇹 <b>Learn Italian Language (Perugia Student Academy)</b>\n\n"
+        text += "🎓 Welcome to the smart language learning hub!\n"
+        text += "Where would you like to start today?\n\n"
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📚 Structured Lessons (A1-B1)", callback_data="it_menu_lessons")],
+            [InlineKeyboardButton(text="📖 Grammar & Rules (A1-B1)", callback_data="it_menu_grammar")],
+            [InlineKeyboardButton(text="🃏 Vocabulary Flashcards (with audio 🔊)", callback_data="italian_flashcard")],
+            [InlineKeyboardButton(text="🧠 Level Quiz & Test", callback_data="italian_quiz")],
+            [InlineKeyboardButton(text="🏠 Main Menu", callback_data="main_menu")]
+        ])
+    else:
+        text = "🇮🇹 <b>آموزش جامع زبان ایتالیایی (پروجا)</b>\n\n"
+        text += "🎓 به آکادمی هوشمند خوش آمدید!\n"
+        text += "اینجا می‌تونی با روش‌های مدرن زبان یاد بگیری. از کجا شروع کنیم؟\n\n"
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📚 درس‌های طبقه‌بندی شده (A1-B1)", callback_data="it_menu_lessons")],
+            [InlineKeyboardButton(text="📖 گرامر و قواعد (A1-B1)", callback_data="it_menu_grammar")],
+            [InlineKeyboardButton(text="🃏 فلش‌کارت لغات (با تلفظ 🔊)", callback_data="italian_flashcard")],
+            [InlineKeyboardButton(text="🧠 آزمون و تعیین سطح", callback_data="italian_quiz")],
+            [InlineKeyboardButton(text="🏠 بازگشت به منوی اصلی", callback_data="main_menu")]
+        ])
     
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📚 درس‌های طبقه‌بندی شده (A1-B1)", callback_data="it_menu_lessons")],
-        [InlineKeyboardButton(text="📖 گرامر و قواعد (A1-B1)", callback_data="it_menu_grammar")],
-        [InlineKeyboardButton(text="🃏 فلش‌کارت لغات (با تلفظ 🔊)", callback_data="italian_flashcard")],
-        [InlineKeyboardButton(text="🧠 آزمون و تعیین سطح", callback_data="italian_quiz")],
-        [InlineKeyboardButton(text="🏠 بازگشت به منوی اصلی", callback_data="main_menu")]
-    ])
-    
-    # هندل کردن خطای احتمالی ادیت پیام
     try:
         await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
     except:
@@ -98,17 +128,42 @@ async def italian_main(callback: types.CallbackQuery, state: FSMContext):
 @router.callback_query(F.data == "it_menu_lessons")
 async def lesson_level_select(callback: types.CallbackQuery, state: FSMContext):
     """منوی انتخاب سطح برای درس‌ها"""
-    text = "📚 <b>انتخاب سطح آموزشی</b>\n\n"
-    text += "🟢 <b>سطح A1 (مبتدی):</b> بقا در ایتالیا، احوالپرسی، خرید\n"
-    text += "🟡 <b>سطح A2 (متوسط):</b> مکالمه روزمره، بیان احساسات\n"
-    text += "🔴 <b>سطح B1 (پیشرفته):</b> مکاتبات اداری، دانشگاهی\n"
+    user_id = callback.from_user.id
+    lang_code = get_user_lang_code(user_id)
     
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🟢 سطح A1", callback_data="less_lvl_A1")],
-        [InlineKeyboardButton(text="🟡 سطح A2", callback_data="less_lvl_A2")],
-        [InlineKeyboardButton(text="🔴 سطح B1", callback_data="less_lvl_B1")],
-        [InlineKeyboardButton(text="🔙 بازگشت", callback_data="italian")]
-    ])
+    if lang_code == "it":
+        text = "📚 <b>Scegli il Livello di Studio</b>\n\n"
+        text += "🟢 <b>Livello A1 (Principiante):</b> Saluti, vita quotidiana, acquisti\n"
+        text += "🟡 <b>Livello A2 (Intermedio):</b> Conversazioni, esprimere emozioni\n"
+        text += "🔴 <b>Livello B1 (Avanzato):</b> Comunicazioni universitarie e formali\n"
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🟢 Livello A1", callback_data="less_lvl_A1")],
+            [InlineKeyboardButton(text="🟡 Livello A2", callback_data="less_lvl_A2")],
+            [InlineKeyboardButton(text="🔴 Livello B1", callback_data="less_lvl_B1")],
+            [InlineKeyboardButton(text="🔙 Indietro", callback_data="italy")]
+        ])
+    elif lang_code == "en":
+        text = "📚 <b>Select Learning Level</b>\n\n"
+        text += "🟢 <b>Level A1 (Beginner):</b> Basic survival, greetings, shopping\n"
+        text += "🟡 <b>Level A2 (Intermediate):</b> Daily conversation, opinions\n"
+        text += "🔴 <b>Level B1 (Advanced):</b> Academic & official correspondence\n"
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🟢 Level A1", callback_data="less_lvl_A1")],
+            [InlineKeyboardButton(text="🟡 Level A2", callback_data="less_lvl_A2")],
+            [InlineKeyboardButton(text="🔴 Level B1", callback_data="less_lvl_B1")],
+            [InlineKeyboardButton(text="🔙 Back", callback_data="italy")]
+        ])
+    else:
+        text = "📚 <b>انتخاب سطح آموزشی</b>\n\n"
+        text += "🟢 <b>سطح A1 (مبتدی):</b> بقا در ایتالیا، احوالپرسی، خرید\n"
+        text += "🟡 <b>سطح A2 (متوسط):</b> مکالمه روزمره، بیان احساسات\n"
+        text += "🔴 <b>سطح B1 (پیشرفته):</b> مکاتبات اداری، دانشگاهی\n"
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🟢 سطح A1", callback_data="less_lvl_A1")],
+            [InlineKeyboardButton(text="🟡 سطح A2", callback_data="less_lvl_A2")],
+            [InlineKeyboardButton(text="🔴 سطح B1", callback_data="less_lvl_B1")],
+            [InlineKeyboardButton(text="🔙 بازگشت", callback_data="italy")]
+        ])
     
     await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
     await state.set_state(ItalianState.selecting_lesson_level)

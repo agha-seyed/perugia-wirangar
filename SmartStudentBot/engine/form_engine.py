@@ -1,6 +1,7 @@
 # engine/form_engine.py - موتور فرم JSON-driven (قابل استفاده برای هر فرم)
 
 import json
+from typing import Tuple
 from aiogram.fsm.context import FSMContext
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
@@ -31,7 +32,7 @@ class FormEngine:
                 [InlineKeyboardButton(text="🔙 بازگشت", callback_data="form_back")]
             ])
 
-    def validate_input(self, step: int, value: str) -> (bool, str):
+    def validate_input(self, step: int, value: str) -> Tuple[bool, str]:
         step_data = self.get_step_data(step)
         validation = step_data.get("validation", {})
         

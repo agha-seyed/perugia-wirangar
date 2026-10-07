@@ -32,6 +32,9 @@ import random
 import traceback
 import base64
 import io
+import os
+from gtts import gTTS
+from pypdf import PdfReader
 from datetime import datetime, timedelta
 from collections import defaultdict, Counter, deque
 from contextlib import suppress, asynccontextmanager
@@ -1064,19 +1067,158 @@ MESSAGES: Dict[str, Dict[str, Any]] = {
         "btn_select_model": "🤖 انتخاب مدل",
         "btn_new_word": "🆕 کلمه جدید",
         "btn_another_translate": "🔄 ترجمه دیگر",
+        "btn_q_scholarship": "🎓 بورسیه",
+        "btn_q_permesso": "🛂 پرمسو",
+        "btn_q_cost": "💰 هزینه",
+        "btn_q_housing": "🏠 مسکن",
     },
     
     "en": {
-        "thinking": ["🧠 <i>Thinking...</i>", "🤔 <i>Just a moment...</i>"],
+        "thinking": [
+            "🧠 <i>Thinking...</i>",
+            "🤔 <i>Just a moment...</i>",
+            "💭 <i>Processing...</i>",
+            "⚡ <i>Preparing the answer...</i>",
+        ],
         "warming_up": "🔄 <i>Preparing service...</i>",
+        "warming_up_done": "✅ Service is ready!",
+        "warming_up_failed": "⚠️ Service is waking up...",
+        "service_waking_up": "☕ <i>Service is waking up...</i>",
+        "retry_after_warmup": "🔄 Retrying...",
         "voice_processing": "🎤 <i>Converting speech to text...</i>",
+        "voice_too_long": "⚠️ Maximum voice length is {seconds} seconds.",
+        "voice_error": "❌ Error processing audio. Please try again.",
         "voice_empty": "❌ No text extracted. Please speak clearly or type your question.",
+        "voice_your_text": "🎤 <b>Extracted text:</b>",
+        "voice_not_supported": "⚠️ Voice messages not supported.",
         "image_processing": "🖼️ <i>Analyzing image...</i>",
-        "greeting": ["Hello! 👋 How can I help?"],
-        "error": ["😅 Something went wrong, try again!"],
+        "image_too_large": "⚠️ Maximum image size is {size}MB.",
+        "image_error": "❌ Error processing image.",
+        "image_analysis": "🖼️ <b>Image analysis:</b>",
+        "image_not_supported": "⚠️ Image analysis not supported.",
+        "image_no_caption": "Explain this image and transcribe any visible text.",
+        "select_model_title": "🤖 <b>Select AI Model</b>",
+        "current_model": "Current model",
+        "model_selected": "✅ Model {name} selected!",
+        "model_not_found": "❌ Model not found",
+        "model_fallback_notice": "\n\n⚠️ <i>Note: {original} was unavailable, used {used} instead.</i>",
+        "greeting": [
+            "Hello! 👋 How can I help you?",
+            "Hi friend! 🌟 Feel free to ask your question!",
+            "Hey! 😊 Ready to help you.",
+        ],
+        "error": [
+            "😅 Something went wrong, please try again!",
+            "🔄 Processing error, please resend.",
+        ],
         "rate_limit": "⏳ Please wait {seconds} seconds.",
         "timeout": "⚠️ Request timed out. Please try again.",
-        "model_fallback_notice": "\n\n⚠️ <i>Note: {original} was unavailable, used {used} instead.</i>",
+        "service_unavailable": "⚠️ AI service is currently unavailable.",
+        "empty_message": "⚠️ Please write a message!",
+        "cancelled": "❌ Cancelled.",
+        "chat_ended": "✅ Chat ended.",
+        "history_cleared": "🗑 {count} messages cleared!",
+        "send_word": "✍️ Send an Italian word:",
+        "send_text": "✍️ Send your text:",
+        "no_access": "⛔ Access denied!",
+        "menu_title": "🤖 <b>Perugia Smart Assistant</b>",
+        "chat_title": "💬 <b>Chat with Smart Assistant</b>",
+        "translate_title": "🌐 <b>Smart Translation</b>",
+        "italian_title": "🇮🇹 <b>Italian Learning Help</b>",
+        "stats_title": "📊 <b>AI Service Status</b>",
+        "quick_title": "⚡ <b>Frequently Asked Questions</b>",
+        "btn_start_chat": "💬 Start Chat",
+        "btn_translate": "🌐 Translate",
+        "btn_italian": "🇮🇹 Italian",
+        "btn_quick": "⚡ Quick Questions",
+        "btn_stats": "📊 Status",
+        "btn_main_menu": "🏠 Main Menu",
+        "btn_ai_menu": "🔙 AI Menu",
+        "btn_end_chat": "❌ End Chat",
+        "btn_clear_history": "🗑 Clear History",
+        "btn_refresh": "🔄 Refresh",
+        "btn_cancel": "❌ Cancel",
+        "btn_select_model": "🤖 Select Model",
+        "btn_new_word": "🆕 New Word",
+        "btn_another_translate": "🔄 Another Translation",
+        "btn_q_scholarship": "🎓 Scholarship",
+        "btn_q_permesso": "🛂 Permesso",
+        "btn_q_cost": "💰 Costs",
+        "btn_q_housing": "🏠 Housing",
+    },
+
+    "it": {
+        "thinking": [
+            "🧠 <i>Sto pensando...</i>",
+            "🤔 <i>Un momento...</i>",
+            "💭 <i>Elaborazione in corso...</i>",
+            "⚡ <i>Preparo la risposta...</i>",
+        ],
+        "warming_up": "🔄 <i>Preparazione del servizio...</i>",
+        "warming_up_done": "✅ Servizio pronto!",
+        "warming_up_failed": "⚠️ Il servizio si sta riattivando...",
+        "service_waking_up": "☕ <i>Servizio in risveglio...</i>",
+        "retry_after_warmup": "🔄 Riprovo...",
+        "voice_processing": "🎤 <i>Trascrizione audio in testo...</i>",
+        "voice_too_long": "⚠️ Lunghezza massima del vocale: {seconds} secondi.",
+        "voice_error": "❌ Errore durante l'elaborazione dell'audio.",
+        "voice_empty": "❌ Nessun testo rilevato. Parla chiaramente o scrivi il messaggio.",
+        "voice_your_text": "🎤 <b>Testo estratto:</b>",
+        "voice_not_supported": "⚠️ Messaggi vocali non supportati.",
+        "image_processing": "🖼️ <i>Analisi dell'immagine...</i>",
+        "image_too_large": "⚠️ Dimensione massima immagine: {size}MB.",
+        "image_error": "❌ Errore durante l'elaborazione dell'immagine.",
+        "image_analysis": "🖼️ <b>Analisi immagine:</b>",
+        "image_not_supported": "⚠️ Analisi immagini non supportata.",
+        "image_no_caption": "Descrivi questa immagine e leggi eventuale testo presente.",
+        "select_model_title": "🤖 <b>Seleziona Modello AI</b>",
+        "current_model": "Modello attuale",
+        "model_selected": "✅ Modello {name} selezionato!",
+        "model_not_found": "❌ Modello non trovato",
+        "model_fallback_notice": "\n\n⚠️ <i>Nota: {original} non era disponibile, è stato usato {used}.</i>",
+        "greeting": [
+            "Ciao! 👋 Come posso aiutarti?",
+            "Benvenuto! 🌟 Fai la tua domanda!",
+            "Ehi! 😊 Pronto ad aiutarti.",
+        ],
+        "error": [
+            "😅 Si è verificato un errore, riprova!",
+            "🔄 Errore di elaborazione, invia di nuovo.",
+        ],
+        "rate_limit": "⏳ Attendi {seconds} secondi.",
+        "timeout": "⚠️ Richiesta scaduta. Riprova per favore.",
+        "service_unavailable": "⚠️ Servizio AI momentaneamente non disponibile.",
+        "empty_message": "⚠️ Inserisci un messaggio!",
+        "cancelled": "❌ Annullato.",
+        "chat_ended": "✅ Chat terminata.",
+        "history_cleared": "🗑 {count} messaggi cancellati!",
+        "send_word": "✍️ Invia una parola in italiano:",
+        "send_text": "✍️ Invia il tuo testo:",
+        "no_access": "⛔ Accesso negato!",
+        "menu_title": "🤖 <b>Assistente Intelligente Perugia</b>",
+        "chat_title": "💬 <b>Chat con Assistente AI</b>",
+        "translate_title": "🌐 <b>Traduzione Smart</b>",
+        "italian_title": "🇮🇹 <b>Aiuto Lingua Italiana</b>",
+        "stats_title": "📊 <b>Stato del Servizio AI</b>",
+        "quick_title": "⚡ <b>Domande Frequenti</b>",
+        "btn_start_chat": "💬 Inizia Chat",
+        "btn_translate": "🌐 Traduci",
+        "btn_italian": "🇮🇹 Italiano",
+        "btn_quick": "⚡ Domande Rapide",
+        "btn_stats": "📊 Stato",
+        "btn_main_menu": "🏠 Menu Principale",
+        "btn_ai_menu": "🔙 Menu AI",
+        "btn_end_chat": "❌ Termina",
+        "btn_clear_history": "🗑 Cancella Cronologia",
+        "btn_refresh": "🔄 Aggiorna",
+        "btn_cancel": "❌ Annulla",
+        "btn_select_model": "🤖 Scegli Modello",
+        "btn_new_word": "🆕 Nuova Parola",
+        "btn_another_translate": "🔄 Altra Traduzione",
+        "btn_q_scholarship": "🎓 Borsa Studio",
+        "btn_q_permesso": "🛂 Permesso",
+        "btn_q_cost": "💰 Costi",
+        "btn_q_housing": "🏠 Alloggio",
     },
 }
 
@@ -1634,12 +1776,12 @@ def get_chat_keyboard(user_lang: str = "fa") -> InlineKeyboardMarkup:
     """کیبورد حین چت"""
     return InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="🎓 بورسیه", callback_data="ai:q_scholarship"),
-            InlineKeyboardButton(text="🛂 پرمسو", callback_data="ai:q_permesso"),
+            InlineKeyboardButton(text=get_msg(user_lang, "btn_q_scholarship"), callback_data="ai:q_scholarship"),
+            InlineKeyboardButton(text=get_msg(user_lang, "btn_q_permesso"), callback_data="ai:q_permesso"),
         ],
         [
-            InlineKeyboardButton(text="💰 هزینه", callback_data="ai:q_cost"),
-            InlineKeyboardButton(text="🏠 مسکن", callback_data="ai:q_housing"),
+            InlineKeyboardButton(text=get_msg(user_lang, "btn_q_cost"), callback_data="ai:q_cost"),
+            InlineKeyboardButton(text=get_msg(user_lang, "btn_q_housing"), callback_data="ai:q_housing"),
         ],
         [
             InlineKeyboardButton(
@@ -1657,6 +1799,12 @@ def get_chat_keyboard(user_lang: str = "fa") -> InlineKeyboardMarkup:
                 callback_data="ai:end_chat"
             ),
         ],
+        [
+            InlineKeyboardButton(
+                text=get_msg(user_lang, "btn_main_menu"),
+                callback_data="main_menu"
+            ),
+        ],
     ])
 
 
@@ -1672,16 +1820,21 @@ def get_chat_with_model_keyboard(
     
     # تعداد پیام‌های تاریخچه
     history_count = len(chat_history_manager._memory_history.get(user_id, []))
-    clear_text = f"🗑 پاک ({history_count})" if history_count > 0 else "🗑 خالی"
+    if user_lang == "it":
+        clear_text = f"🗑 Cancella ({history_count})" if history_count > 0 else "🗑 Vuoto"
+    elif user_lang == "en":
+        clear_text = f"🗑 Clear ({history_count})" if history_count > 0 else "🗑 Empty"
+    else:
+        clear_text = f"🗑 پاک ({history_count})" if history_count > 0 else "🗑 خالی"
     
     return InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="🎓 بورسیه", callback_data="ai:q_scholarship"),
-            InlineKeyboardButton(text="🛂 پرمسو", callback_data="ai:q_permesso"),
+            InlineKeyboardButton(text=get_msg(user_lang, "btn_q_scholarship"), callback_data="ai:q_scholarship"),
+            InlineKeyboardButton(text=get_msg(user_lang, "btn_q_permesso"), callback_data="ai:q_permesso"),
         ],
         [
-            InlineKeyboardButton(text="💰 هزینه", callback_data="ai:q_cost"),
-            InlineKeyboardButton(text="🏠 مسکن", callback_data="ai:q_housing"),
+            InlineKeyboardButton(text=get_msg(user_lang, "btn_q_cost"), callback_data="ai:q_cost"),
+            InlineKeyboardButton(text=get_msg(user_lang, "btn_q_housing"), callback_data="ai:q_housing"),
         ],
         [
             InlineKeyboardButton(
@@ -1703,6 +1856,12 @@ def get_chat_with_model_keyboard(
             InlineKeyboardButton(
                 text=get_msg(user_lang, "btn_end_chat"),
                 callback_data="ai:end_chat"
+            ),
+        ],
+        [
+            InlineKeyboardButton(
+                text=get_msg(user_lang, "btn_main_menu"),
+                callback_data="main_menu"
             ),
         ],
     ])
@@ -3856,3 +4015,47 @@ __all__ = [
     "USER_SELECTABLE_MODELS",
     "QUICK_QUESTIONS",
 ]
+
+@router.message(AIStates.chatting, F.document)
+async def handle_document(message: types.Message, state: FSMContext, bot: Bot):
+    """دریافت فایل و پردازش با هوش مصنوعی (فقط اگر کاربر در حال گفتگو با هوش مصنوعی باشد)"""
+        
+    user_id = message.from_user.id
+    doc = message.document
+    
+    if not doc.file_name.lower().endswith('.pdf'):
+        await message.answer("⚠️ لطفاً فقط فایل‌های PDF ارسال کنید.")
+        return
+        
+    loading = await message.answer("📄 در حال خواندن محتوای فایل PDF...")
+    try:
+        file = await bot.get_file(doc.file_id)
+        file_bytes = await bot.download_file(file.file_path)
+        
+        reader = PdfReader(file_bytes)
+        text = ""
+        for page in reader.pages:
+            extracted = page.extract_text()
+            if extracted:
+                text += extracted + "\n"
+                
+        if not text.strip():
+            await loading.edit_text("⚠️ متنی در این PDF یافت نشد (شاید عکس باشد).")
+            return
+            
+        await loading.edit_text("🧠 در حال تحلیل محتوا توسط هوش مصنوعی...")
+        
+        # limit text to avoid huge context length issues
+        text = text[:15000]
+        
+        prompt = f"متن زیر را بخوان و خلاصه‌ای از نکات مهم آن را به زبان فارسی ساده بگو. اگر فایل قانونی، بورس یا قرارداد است نکات کلیدی و هشدارهای مهم آن را حتما ذکر کن:\n\n{text}"
+        
+        from services.ai_service import ai_service
+        response = await ai_service.chat(prompt, user_id=user_id, context="student_assistant")
+        
+        await loading.edit_text(response.text)
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        await loading.edit_text(f"⚠️ خطا در پردازش فایل: {e}")

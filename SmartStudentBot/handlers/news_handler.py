@@ -42,6 +42,7 @@ import json
 import os
 
 from config import settings, logger
+from services.unipg_scraper import UniPGScraper
 
 # تلاش برای import توابع زبان
 try:
@@ -126,12 +127,10 @@ def is_admin(user_id: int) -> bool:
     return user_id in settings.ADMIN_CHAT_IDS
 
 
-def load_news() -> List[Dict[str, Any]]:
-    """خواندن لیست اخبار از فایل JSON"""
-    
+def load_news_sync() -> List[Dict[str, Any]]:
+    """خواندن سنکرون لیست اخبار از فایل JSON"""
     if not NEWS_JSON.exists():
         return []
-    
     try:
         with open(NEWS_JSON, "r", encoding="utf-8") as f:
             content = f.read().strip()
@@ -141,7 +140,6 @@ def load_news() -> List[Dict[str, Any]]:
             return data if isinstance(data, list) else []
     except json.JSONDecodeError as e:
         logger.warning(f"⚠️ فایل news.json خراب است: {e}")
-        # بکاپ فایل خراب
         backup_path = NEWS_JSON.with_suffix(".json.bak")
         if NEWS_JSON.exists():
             NEWS_JSON.rename(backup_path)
@@ -150,8 +148,12 @@ def load_news() -> List[Dict[str, Any]]:
         logger.error(f"❌ خطا در خواندن اخبار: {e}")
         return []
 
+async def load_news() -> List[Dict[str, Any]]:
+    """خواندن لیست اخبار از فایل JSON"""
+    return load_news_sync()
 
-def save_news(news_list: List[Dict[str, Any]]) -> bool:
+
+async def save_news(news_list: List[Dict[str, Any]]) -> bool:
     """ذخیره لیست اخبار در فایل JSON"""
     
     try:
@@ -170,13 +172,13 @@ def save_news(news_list: List[Dict[str, Any]]) -> bool:
 
 def get_news_by_id(news_id: int) -> Optional[Dict[str, Any]]:
     """یافتن خبر با ID"""
-    news_list = load_news()
+    news_list = load_news_sync()
     return next((n for n in news_list if n.get("id") == news_id), None)
 
 
 def generate_news_id() -> int:
     """تولید ID یکتا برای خبر جدید"""
-    news_list = load_news()
+    news_list = load_news_sync()
     if not news_list:
         return 1
     return max(n.get("id", 0) for n in news_list) + 1
@@ -375,7 +377,23 @@ def get_news_list_keyboard(
     if nav_buttons:
         buttons.append(nav_buttons)
     
-    # دکمه‌های اضافی
+    # دکمه‌های تکمیلی دانشگاه و اطلاع‌رسانی
+    buttons.append([
+        InlineKeyboardButton(
+            text=get_text(lang, "news_unipg_btn", "🏛 اطلاعیه‌های زنده UniPG"),
+            callback_data="news_unipg_live"
+        ),
+        InlineKeyboardButton(
+            text=get_text(lang, "news_adisu_btn", "🏢 بورس و مسکن ADiSU"),
+            callback_data="news_adisu_live"
+        )
+    ])
+    buttons.append([
+        InlineKeyboardButton(
+            text=get_text(lang, "news_deadlines_btn", "🚨 ددلاین‌ها و تقویم تحصیلی"),
+            callback_data="news_deadlines"
+        )
+    ])
     buttons.append([
         InlineKeyboardButton(
             text=get_text(lang, "news_refresh", "🔄 به‌روزرسانی"),
@@ -561,23 +579,24 @@ async def show_news_list(callback: CallbackQuery, state: FSMContext):
     
     user_id = callback.from_user.id
     lang = get_user_lang(user_id)
-    news_list = load_news()
+    news_list = await load_news()
     
     # ساخت متن
-    text = "📰 <b>اخبار و به‌روزرسانی‌ها</b>\n\n"
+    def t(k, d): return get_text(lang, k, d)
+    
+    text = t("news_main_title", "📰 <b>اخبار و به‌روزرسانی‌ها</b>") + "\n\n"
     text += "━━━━━━━━━━━━━━━━━━━━━\n\n"
     
     if not news_list:
-        text += "📭 <i>هنوز خبری منتشر نشده است.</i>\n\n"
-        text += "💡 به‌زودی اخبار جدید منتشر می‌شود!"
+        text += t("news_empty", "📭 <i>هنوز خبری منتشر نشده است.</i>\n\n💡 به‌زودی اخبار جدید منتشر می‌شود!")
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔄 به‌روزرسانی", callback_data="news")],
-            [InlineKeyboardButton(text="🏠 منوی اصلی", callback_data="main_menu")],
+            [InlineKeyboardButton(text=t("news_refresh", "🔄 به‌روزرسانی"), callback_data="news")],
+            [InlineKeyboardButton(text=t("back_to_menu", "🏠 منوی اصلی"), callback_data="main_menu")],
         ])
     else:
-        text += f"📊 تعداد اخبار: <b>{len(news_list)}</b>\n\n"
-        text += "👇 برای مشاهده جزئیات، روی خبر کلیک کنید:"
+        text += t("news_count", "📊 تعداد اخبار: <b>{count}</b>").format(count=len(news_list)) + "\n\n"
+        text += t("news_click_detail", "👇 برای مشاهده جزئیات، روی خبر کلیک کنید:")
         
         keyboard = get_news_list_keyboard(news_list, page=0, lang=lang)
     
@@ -604,12 +623,14 @@ async def news_pagination(callback: CallbackQuery):
     page = int(callback.data.split("_")[-1])
     user_id = callback.from_user.id
     lang = get_user_lang(user_id)
-    news_list = load_news()
+    news_list = await load_news()
     
-    text = "📰 <b>اخبار و به‌روزرسانی‌ها</b>\n\n"
+    def t(k, d): return get_text(lang, k, d)
+    
+    text = t("news_main_title", "📰 <b>اخبار و به‌روزرسانی‌ها</b>") + "\n\n"
     text += "━━━━━━━━━━━━━━━━━━━━━\n\n"
-    text += f"📊 تعداد اخبار: <b>{len(news_list)}</b>\n\n"
-    text += "👇 برای مشاهده جزئیات، روی خبر کلیک کنید:"
+    text += t("news_count", "📊 تعداد اخبار: <b>{count}</b>").format(count=len(news_list)) + "\n\n"
+    text += t("news_click_detail", "👇 برای مشاهده جزئیات، روی خبر کلیک کنید:")
     
     await callback.message.edit_text(
         text=text,
@@ -623,6 +644,154 @@ async def news_pagination(callback: CallbackQuery):
 @router.callback_query(F.data == "news_noop")
 async def news_noop(callback: CallbackQuery):
     """دکمه بدون عملکرد (شماره صفحه)"""
+    await callback.answer()
+
+
+@router.callback_query(F.data.in_(["news_unipg_live", "news_unipg_rss"]))
+async def fetch_unipg_live(callback: CallbackQuery, state: FSMContext):
+    """دریافت و نمایش آخرین اخبار و اطلاعیه‌های رسمی UniPG با خزشگر هوشمند"""
+    user_id = callback.from_user.id
+    lang = get_user_lang(user_id)
+    
+    await callback.message.edit_text(
+        "⏳ <i>در حال ارتباط با سرور دانشگاه پروجا (UniPG) و استخراج تازه‌ترین اطلاعیه‌ها...</i>",
+        parse_mode=ParseMode.HTML
+    )
+    
+    items = await UniPGScraper.get_unipg_news(limit=6)
+    
+    text = "🏛 <b>تازه‌ترین اخبار و اطلاعیه‌های رسمی UniPG</b>\n"
+    text += "<i>دانشگاه دولتی پروجا (Università degli Studi di Perugia)</i>\n"
+    text += "━━━━━━━━━━━━━━━━━━━━━\n\n"
+    
+    if not items:
+        text += "⚠️ <i>در حال حاضر اطلاعیه جدیدی یافت نشد. لطفاً بعداً بررسی کنید.</i>\n"
+    else:
+        for idx, item in enumerate(items, 1):
+            title = item.get("title", "بدون عنوان")
+            orig_title = item.get("original_title")
+            date = item.get("date", "")
+            link = item.get("link", "https://www.unipg.it")
+            summary = item.get("summary", "")
+            
+            text += f"🔹 <b>{idx}. {title}</b>\n"
+            if orig_title and orig_title != title:
+                text += f"   🇮🇹 <i>{orig_title}</i>\n"
+            if date:
+                text += f"   📅 {date}\n"
+            if summary:
+                text += f"   📝 <i>{summary}</i>\n"
+            text += f"   🔗 <a href='{link}'>مشاهده اصل اطلاعیه در سایت UniPG</a>\n\n"
+            
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="🏢 اطلاعیه‌های ADiSU", callback_data="news_adisu_live"),
+            InlineKeyboardButton(text="🚨 ددلاین‌ها", callback_data="news_deadlines")
+        ],
+        [
+            InlineKeyboardButton(text="🔄 بروزرسانی", callback_data="news_unipg_live"),
+            InlineKeyboardButton(text=get_text(lang, "back", "🔙 بازگشت به اخبار"), callback_data="news")
+        ]
+    ])
+    
+    await callback.message.edit_text(
+        text=text,
+        reply_markup=keyboard,
+        parse_mode=ParseMode.HTML,
+        disable_web_page_preview=True
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "news_adisu_live")
+async def fetch_adisu_live(callback: CallbackQuery, state: FSMContext):
+    """دریافت و نمایش آخرین اطلاعیه‌های بورس، مسکن و رفاهی ADiSU Umbria"""
+    user_id = callback.from_user.id
+    lang = get_user_lang(user_id)
+    
+    await callback.message.edit_text(
+        "⏳ <i>در حال واکشی اطلاعیه‌ها و دفترچه‌های سازمان ADiSU Umbria...</i>",
+        parse_mode=ParseMode.HTML
+    )
+    
+    items = await UniPGScraper.get_adisu_news(limit=6)
+    
+    text = "🏢 <b>اطلاعیه‌های رسمی سازمان بورس و اسکان ADiSU Umbria</b>\n"
+    text += "<i>(بورسیه استانی، خوابگاه‌های دانشجویی، سلف و غذاخوری)</i>\n"
+    text += "━━━━━━━━━━━━━━━━━━━━━\n\n"
+    
+    for idx, item in enumerate(items, 1):
+        title = item.get("title", "بدون عنوان")
+        orig_title = item.get("original_title")
+        cat = item.get("category", "🏠 ADiSU")
+        link = item.get("link", "https://www.adisu.umbria.it/avvisi")
+        summary = item.get("summary", "")
+        
+        text += f"🔸 <b>{idx}. [{cat}] {title}</b>\n"
+        if orig_title and orig_title != title:
+            text += f"   🇮🇹 <i>{orig_title}</i>\n"
+        if summary:
+            text += f"   📝 <i>{summary}</i>\n"
+        text += f"   🔗 <a href='{link}'>مشاهده صفحه در ADiSU</a>\n\n"
+        
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="🏛 اخبار UniPG", callback_data="news_unipg_live"),
+            InlineKeyboardButton(text="🚨 تقویم ددلاین‌ها", callback_data="news_deadlines")
+        ],
+        [
+            InlineKeyboardButton(text="🔄 بروزرسانی", callback_data="news_adisu_live"),
+            InlineKeyboardButton(text=get_text(lang, "back", "🔙 بازگشت به اخبار"), callback_data="news")
+        ]
+    ])
+    
+    await callback.message.edit_text(
+        text=text,
+        reply_markup=keyboard,
+        parse_mode=ParseMode.HTML,
+        disable_web_page_preview=True
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "news_deadlines")
+async def show_academic_deadlines(callback: CallbackQuery):
+    """نمایش تقویم ددلاین‌های بحرانی و مهم دانشجویان پروجا"""
+    user_id = callback.from_user.id
+    lang = get_user_lang(user_id)
+    
+    deadlines = UniPGScraper.get_deadlines()
+    
+    text = "🚨 <b>تقویم ددلاین‌ها و مواعد حیاتی تحصیلی پروجا</b>\n"
+    text += "<i>یادآور مواعد بحرانی ارسال مدارک، بورس، شهریه و اقامت ایتالیا</i>\n"
+    text += "━━━━━━━━━━━━━━━━━━━━━\n\n"
+    
+    for d in deadlines:
+        text += f"{d['importance']} <b>{d['title']}</b>\n"
+        text += f"⏳ <b>مهلت:</b> {d['deadline']}\n"
+        text += f"🏷 دسته‌بندی: {d['category']}\n"
+        text += f"💡 <i>{d['desc']}</i>\n"
+        if d.get("link"):
+            text += f"🌐 <a href=\"{d['link']}\">سامانه مربوطه</a>\n"
+        text += "\n"
+        
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="🏛 اخبار UniPG", callback_data="news_unipg_live"),
+            InlineKeyboardButton(text="🏢 اطلاعیه‌های ADiSU", callback_data="news_adisu_live")
+        ],
+        [
+            InlineKeyboardButton(text=get_text(lang, "back", "🔙 بازگشت به اخبار"), callback_data="news"),
+            InlineKeyboardButton(text="🏠 منوی اصلی", callback_data="main_menu")
+        ]
+    ])
+    
+    await callback.message.edit_text(
+        text=text,
+        reply_markup=keyboard,
+        parse_mode=ParseMode.HTML,
+        disable_web_page_preview=True
+    )
     await callback.answer()
 
 
@@ -649,12 +818,12 @@ async def view_news_detail(callback: CallbackQuery):
     text += "\n━━━━━━━━━━━━━━━━━━━━━"
     
     # افزایش شمارنده بازدید
-    news_list = load_news()
+    news_list = await load_news()
     for n in news_list:
         if n.get("id") == news_id:
             n["views"] = n.get("views", 0) + 1
             break
-    save_news(news_list)
+    await save_news(news_list)
     
     # نمایش تعداد بازدید
     text += f"\n👁 بازدید: {news.get('views', 0)}"
@@ -720,7 +889,7 @@ async def process_search(message: Message, state: FSMContext):
     
     user_id = message.from_user.id
     lang = get_user_lang(user_id)
-    news_list = load_news()
+    news_list = await load_news()
     
     # جستجو در عنوان و محتوا
     results = []
@@ -971,7 +1140,7 @@ async def confirm_post_news(callback: CallbackQuery, state: FSMContext):
     )
     
     # ذخیره در دیتابیس
-    news_list = load_news()
+    news_list = await load_news()
     
     new_news = {
         "id": generate_news_id(),
@@ -988,7 +1157,7 @@ async def confirm_post_news(callback: CallbackQuery, state: FSMContext):
     }
     
     news_list.append(new_news)
-    save_news(news_list)
+    await save_news(news_list)
     
     await state.clear()
     
@@ -1021,7 +1190,7 @@ async def cmd_edit_news(message: Message, state: FSMContext):
         await message.answer("⛔ شما دسترسی ندارید.")
         return
     
-    news_list = load_news()
+    news_list = await load_news()
     
     if not news_list:
         await message.answer("📭 هیچ خبری برای ویرایش وجود ندارد.")
@@ -1165,12 +1334,12 @@ async def edit_title(message: Message, state: FSMContext):
     news_id = data.get("editing_news_id")
     
     # به‌روزرسانی در دیتابیس
-    news_list = load_news()
+    news_list = await load_news()
     for news in news_list:
         if news.get("id") == news_id:
             news["title"] = new_title
             break
-    save_news(news_list)
+    await save_news(news_list)
     
     await message.answer(
         f"✅ عنوان به‌روزرسانی شد!\n\n<b>{new_title}</b>",
@@ -1197,12 +1366,12 @@ async def edit_content(message: Message, state: FSMContext):
     data = await state.get_data()
     news_id = data.get("editing_news_id")
     
-    news_list = load_news()
+    news_list = await load_news()
     for news in news_list:
         if news.get("id") == news_id:
             news["content"] = new_content
             break
-    save_news(news_list)
+    await save_news(news_list)
     
     await message.answer("✅ متن به‌روزرسانی شد!")
     await go_back_to_edit_menu(message, state)
@@ -1221,13 +1390,13 @@ async def edit_file(message: Message, state: FSMContext):
     data = await state.get_data()
     news_id = data.get("editing_news_id")
     
-    news_list = load_news()
+    news_list = await load_news()
     for news in news_list:
         if news.get("id") == news_id:
             news["file_path"] = file_path
             news["has_file"] = True
             break
-    save_news(news_list)
+    await save_news(news_list)
     
     await message.answer("✅ فایل به‌روزرسانی شد!")
     await go_back_to_edit_menu(message, state)
@@ -1243,13 +1412,13 @@ async def remove_file(message: Message, state: FSMContext):
         data = await state.get_data()
         news_id = data.get("editing_news_id")
         
-        news_list = load_news()
+        news_list = await load_news()
         for news in news_list:
             if news.get("id") == news_id:
                 news["file_path"] = None
                 news["has_file"] = False
                 break
-        save_news(news_list)
+        await save_news(news_list)
         
         await message.answer("✅ فایل حذف شد!")
         await go_back_to_edit_menu(message, state)
@@ -1268,12 +1437,12 @@ async def edit_category(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     news_id = data.get("editing_news_id")
     
-    news_list = load_news()
+    news_list = await load_news()
     for news in news_list:
         if news.get("id") == news_id:
             news["category"] = new_category
             break
-    save_news(news_list)
+    await save_news(news_list)
     
     category_info = get_category_info(new_category)
     await callback.answer(f"✅ دسته‌بندی: {category_info['name']}")
@@ -1306,12 +1475,12 @@ async def edit_caption(message: Message, state: FSMContext):
     
     new_caption = None if "بدون توضیح" in text.lower() else text
     
-    news_list = load_news()
+    news_list = await load_news()
     for news in news_list:
         if news.get("id") == news_id:
             news["caption"] = new_caption
             break
-    save_news(news_list)
+    await save_news(news_list)
     
     await message.answer("✅ توضیحات به‌روزرسانی شد!")
     await go_back_to_edit_menu(message, state)
@@ -1378,13 +1547,13 @@ async def finish_edit(callback: CallbackQuery, state: FSMContext):
         
         # به‌روزرسانی message_id
         if new_message_id:
-            news_list = load_news()
+            news_list = await load_news()
             for n in news_list:
                 if n.get("id") == news_id:
                     n["message_id"] = new_message_id
                     n["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M")
                     break
-            save_news(news_list)
+            await save_news(news_list)
     
     await state.clear()
     
@@ -1413,7 +1582,7 @@ async def cmd_delete_news(message: Message, state: FSMContext):
         await message.answer("⛔ شما دسترسی ندارید.")
         return
     
-    news_list = load_news()
+    news_list = await load_news()
     
     if not news_list:
         await message.answer("📭 هیچ خبری برای حذف وجود ندارد.")
@@ -1529,9 +1698,9 @@ async def execute_delete(callback: CallbackQuery):
             logger.warning(f"⚠️ خطا در حذف فایل: {e}")
     
     # حذف از دیتابیس
-    news_list = load_news()
+    news_list = await load_news()
     news_list = [n for n in news_list if n.get("id") != news_id]
-    save_news(news_list)
+    await save_news(news_list)
     
     text = "✅ <b>خبر با موفقیت حذف شد!</b>\n\n"
     text += f"📰 {news.get('title')}"
@@ -1586,3 +1755,69 @@ logger.success("📰 News Handler v2.0 loaded!")
 logger.info(f"   Router: {router.name}")
 logger.info(f"   Categories: {len(NEWS_CATEGORIES)}")
 logger.info(f"   News per page: {NEWS_PER_PAGE}")
+# ═══════════════════════════════════════════════════════════════════════════════
+# بخش جدید: اخبار و اطلاعیه‌های ADISU (Bandi) و Mensa
+# ═══════════════════════════════════════════════════════════════════════════════
+import aiohttp
+from bs4 import BeautifulSoup
+
+@router.message(Command("adisu"))
+async def cmd_adisu_news(message: Message):
+    """دریافت آخرین اطلاعیه‌های ADISU"""
+    user_lang = get_user_lang(message.from_user.id)
+    loading_msg = await message.answer("🔄 در حال دریافت اطلاعات از سایت ADISU...")
+    
+    url = "https://www.adisu.umbria.it/"
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=10) as response:
+                if response.status == 200:
+                    html = await response.text()
+                    soup = BeautifulSoup(html, 'lxml')
+                    
+                    # استخراج اخبار صفحه اول به عنوان نمونه
+                    articles = soup.find_all('article', limit=3)
+                    
+                    if not articles:
+                        # اگر ساختار سایت عوض شده بود
+                        text = "🎓 <b>آخرین اطلاعیه‌های ADISU</b>\n\n"
+                        text += "برای مشاهده آخرین اطلاعیه‌ها روی لینک زیر کلیک کنید:\n"
+                        text += "👉 <a href='https://www.adisu.umbria.it/'>سایت رسمی ADISU</a>"
+                    else:
+                        text = "🎓 <b>آخرین اطلاعیه‌های ADISU</b>\n\n"
+                        for art in articles:
+                            title_elem = art.find(['h2', 'h3'])
+                            title = title_elem.text.strip() if title_elem else "بدون عنوان"
+                            link_elem = art.find('a')
+                            link = link_elem['href'] if link_elem else ""
+                            if link and not link.startswith('http'):
+                                link = "https://www.adisu.umbria.it" + link
+                            
+                            text += f"🔹 <a href='{link}'>{title}</a>\n\n"
+                else:
+                    text = "⚠️ در برقراری ارتباط با سایت ADISU مشکلی پیش آمد.\n👉 <a href='https://www.adisu.umbria.it/'>سایت رسمی ADISU</a>"
+    except Exception as e:
+        logger.error(f"Error scraping ADISU: {e}")
+        text = "⚠️ خطا در دریافت اطلاعات.\n👉 <a href='https://www.adisu.umbria.it/'>سایت رسمی ADISU</a>"
+        
+    await loading_msg.edit_text(text, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+
+@router.message(Command("mensa"))
+async def cmd_mensa(message: Message):
+    """نمایش راهنمای Mensa"""
+    text = (
+        "🍽 <b>سلف دانشگاه (Mensa)</b>\n\n"
+        "برای رزرو غذا و دسترسی به منوی روزانه، باید وارد پورتال دانشجویان (Intrastudents) شوید:\n\n"
+        "🔗 <a href='https://intrastudents.adisu.umbria.it/'>ورود به سامانه Mensa</a>\n\n"
+        "📱 <b>اپلیکیشن موبایل (ADISU Umbria):</b>\n"
+        "شما همچنین می‌توانید اپلیکیشن رسمی ADISU را برای دسترسی به کارت غذا (QR Code) دانلود کنید."
+    )
+    
+    markup = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🌐 پورتال دانشجویی (رزرو غذا)", url="https://intrastudents.adisu.umbria.it/")],
+        [InlineKeyboardButton(text="📱 اپلیکیشن اندروید", url="https://play.google.com/store/apps/details?id=it.kyneste.adisu")],
+        [InlineKeyboardButton(text="🍏 اپلیکیشن iOS", url="https://apps.apple.com/it/app/adisu-umbria/id1453272210")]
+    ])
+    
+    await message.answer(text, reply_markup=markup, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+

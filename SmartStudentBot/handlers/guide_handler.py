@@ -37,12 +37,14 @@ from config import settings, logger
 
 # تلاش برای import توابع زبان
 try:
-    from handlers.cmd_start import get_user_lang, get_text
+    from handlers.cmd_start import get_user_lang, get_text, get_user_lang_code
 except ImportError:
     def get_user_lang(user_id: int) -> dict:
         return {}
     def get_text(lang: dict, key: str, default: str = "") -> str:
         return lang.get(key, default or key)
+    def get_user_lang_code(user_id: int) -> str:
+        return "fa"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -58,43 +60,37 @@ router.name = "guide_handler"
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # مراحل اصلی
-STEPS_DATA: Dict[str, Dict[str, str]] = {
-    "1": {
-        "title": "دریافت کدیچه فیسکاله",
-        "emoji": "🆔",
-        "short": "Codice Fiscale",
+STEPS_DATA_LOCALIZED: Dict[str, Dict[str, Dict[str, str]]] = {
+    "fa": {
+        "1": {"title": "دریافت کدیچه فیسکاله", "emoji": "🆔", "short": "Codice Fiscale"},
+        "2": {"title": "خرید سیم‌کارت ایتالیایی", "emoji": "📱", "short": "SIM Card"},
+        "3": {"title": "بیمه درمانی", "emoji": "🏥", "short": "Insurance"},
+        "4": {"title": "ثبت‌نام دانشگاه", "emoji": "🎓", "short": "Immatricolazione"},
+        "5": {"title": "درخواست پرمسو", "emoji": "🛂", "short": "Permesso di Soggiorno"},
+        "6": {"title": "افتتاح حساب بانکی", "emoji": "🏦", "short": "Bank Account"},
+        "7": {"title": "انگشت‌نگاری و کارت اقامت", "emoji": "👆", "short": "Questura"},
     },
-    "2": {
-        "title": "خرید سیم‌کارت ایتالیایی",
-        "emoji": "📱",
-        "short": "SIM Card",
+    "en": {
+        "1": {"title": "Obtain Codice Fiscale", "emoji": "🆔", "short": "Codice Fiscale"},
+        "2": {"title": "Buy Italian SIM Card", "emoji": "📱", "short": "SIM Card"},
+        "3": {"title": "Health Insurance", "emoji": "🏥", "short": "Insurance"},
+        "4": {"title": "University Matriculation", "emoji": "🎓", "short": "Immatricolazione"},
+        "5": {"title": "Residence Permit (Permesso)", "emoji": "🛂", "short": "Permesso di Soggiorno"},
+        "6": {"title": "Open Bank Account", "emoji": "🏦", "short": "Bank Account"},
+        "7": {"title": "Fingerprinting & Residence Card", "emoji": "👆", "short": "Questura"},
     },
-    "3": {
-        "title": "بیمه درمانی",
-        "emoji": "🏥",
-        "short": "Insurance",
-    },
-    "4": {
-        "title": "ثبت‌نام دانشگاه",
-        "emoji": "🎓",
-        "short": "Immatricolazione",
-    },
-    "5": {
-        "title": "درخواست پرمسو",
-        "emoji": "🛂",
-        "short": "Permesso di Soggiorno",
-    },
-    "6": {
-        "title": "افتتاح حساب بانکی",
-        "emoji": "🏦",
-        "short": "Bank Account",
-    },
-    "7": {
-        "title": "انگشت‌نگاری و کارت اقامت",
-        "emoji": "👆",
-        "short": "Questura",
-    },
+    "it": {
+        "1": {"title": "Richiesta Codice Fiscale", "emoji": "🆔", "short": "Codice Fiscale"},
+        "2": {"title": "Acquisto SIM Italiana", "emoji": "📱", "short": "SIM Card"},
+        "3": {"title": "Assicurazione Sanitaria", "emoji": "🏥", "short": "Insurance"},
+        "4": {"title": "Immatricolazione Universitaria", "emoji": "🎓", "short": "Immatricolazione"},
+        "5": {"title": "Richiesta Permesso di Soggiorno", "emoji": "🛂", "short": "Permesso di Soggiorno"},
+        "6": {"title": "Apertura Conto Bancario", "emoji": "🏦", "short": "Bank Account"},
+        "7": {"title": "Impronte Digitali e Ritiro Permesso", "emoji": "👆", "short": "Questura"},
+    }
 }
+
+STEPS_DATA: Dict[str, Dict[str, str]] = STEPS_DATA_LOCALIZED["fa"]
 
 # لوکیشن‌های مهم
 LOCATIONS: Dict[str, Dict[str, Any]] = {
@@ -330,14 +326,347 @@ async def safe_edit_text(
         return False
 
 
-def get_step_content(step_id: int) -> Tuple[str, Optional[str], Optional[str]]:
+def get_step_content(step_id: int, lang_code: str = "fa") -> Tuple[str, Optional[str], Optional[str]]:
     """
     دریافت محتوای هر مرحله
     
     Returns:
         (متن, url عکس, کلید لوکیشن)
     """
+    loc_keys = {
+        1: "agenzia",
+        2: None,
+        3: "asl",
+        4: "uni_main",
+        5: "poste",
+        6: "poste",
+        7: "questura"
+    }
     
+    if lang_code == "en":
+        en_steps = {
+            1: """🆔 <b>Step 1: Obtain Codice Fiscale (Tax Code)</b>
+
+━━━━━━━━━━━━━━━━━━━━━
+
+The most essential identification code in Italy! You cannot sign a lease, open a bank account, or buy a local SIM card without it.
+
+🏢 <b>Where?</b>
+Agenzia delle Entrate
+📍 Via Canali, 12, Perugia
+
+⏰ <b>Hours:</b>
+Monday to Friday 08:30 - 13:00
+
+⚠️ <b>Important:</b> An online reservation is mandatory!
+🌐 <a href='https://www.agenziaentrate.gov.it/portale/prenotazione'>Book Online Appointment</a>
+
+📄 <b>Required Documents:</b>
+• Passport (Original + Copy)
+• Student Visa (Copy)
+
+💰 <b>Cost:</b> Free
+⏳ <b>Time:</b> 10-15 minutes
+
+💡 <b>Tip:</b> Keep a photo of your certificate saved on your phone!""",
+            2: """📱 <b>Step 2: Buy an Italian SIM Card</b>
+
+━━━━━━━━━━━━━━━━━━━━━
+
+An Italian phone number is required for almost all local bureaucratic procedures!
+
+🥇 <b>Iliad (Top Recommendation):</b>
+• 150GB + Unlimited Calls/SMS
+• Price: €9.99/month
+• eSIM available ✅
+• 🌐 <a href='https://www.iliad.it'>iliad.it</a>
+
+🥈 <b>Vodafone:</b>
+• Excellent coverage
+• From €12/month
+• 🌐 <a href='https://www.vodafone.it'>vodafone.it</a>
+
+🥉 <b>TIM:</b>
+• Reliable national & rural coverage
+• From €10/month
+• 🌐 <a href='https://www.tim.it'>tim.it</a>
+
+📍 <b>Iliad Locations in Perugia:</b>
+• Emisfero Shopping Center
+• Fontivegge Railway Station
+• Collestrada Mall
+
+📄 <b>Documents:</b>
+• Passport
+• Codice Fiscale""",
+            3: """🏥 <b>Step 3: Health Insurance</b>
+
+━━━━━━━━━━━━━━━━━━━━━
+
+Valid health insurance coverage is mandatory for your Permesso di Soggiorno!
+
+🟢 <b>W.A.I. (Welcome Association Italy - First Kit):</b>
+• Cost: €120/year
+• Covers emergency hospitalization
+• 🌐 <a href='https://www.waitaly.net'>waitaly.net</a>
+• Fast digital enrollment
+
+🔵 <b>SSN Public Health (National Health Service):</b>
+• Full comprehensive coverage including general practitioner (GP)
+• Enrollment at ASL Umbria 1 (Via XIV Settembre, Perugia)
+
+📄 <b>Documents:</b>
+• Passport
+• Codice Fiscale
+• University enrollment letter""",
+            4: """🎓 <b>Step 4: University Matriculation (Immatricolazione)</b>
+
+━━━━━━━━━━━━━━━━━━━━━
+
+🏛 <b>Università degli Studi di Perugia (UniPG)</b>
+📍 Piazza dell'Università, 1
+
+🌐 <b>Student Portal:</b>
+<a href='https://unipg.esse3.cineca.it'>SOL UniPG</a>
+
+📧 <b>International Office:</b>
+international.students@unipg.it
+
+📄 <b>Required Documents:</b>
+• Admission letter
+• Passport + Visa
+• Codice Fiscale
+• Dichiarazione di Valore (DoV) or CIMEA Statement
+• Language certificate (if applicable)
+• ID photos
+
+💰 <b>Initial Regional Tax:</b> ~€156 + €16 Marca da Bollo""",
+            5: """🛂 <b>Step 5: Apply for Permesso di Soggiorno (Residence Permit)</b>
+
+━━━━━━━━━━━━━━━━━━━━━
+
+⚠️ <b>Deadline: Within 8 business days of arrival in Italy!</b>
+
+📮 <b>First Step: Post Office (Poste Italiane)</b>
+📍 Piazza Giacomo Matteotti, 14, Perugia
+• Request the yellow envelope (Kit Giallo) - Free
+• Buy a €16 Marca da Bollo stamp from any Tabacchi shop
+
+📄 <b>Documents inside the envelope:</b>
+• Photocopy of Passport (all pages with stamps/visas)
+• University enrollment certificate
+• Health insurance policy copy
+• Codice Fiscale copy
+• Proof of funds / bank statement
+• €16 Marca da Bollo stamp affixed to Module 1
+
+💰 <b>Post Office Payment:</b> ~€130 - €140 (Cash or card)
+
+📋 <b>After Submission:</b>
+• You receive the official Postal Receipt (Ricevuta) + Appointment sheet
+• ⚠️ NEVER LOSE THIS RECEIPT! It serves as your temporary legal residence.
+🌐 <b>Track Progress:</b> <a href='https://www.portaleimmigrazione.it'>portaleimmigrazione.it</a>""",
+            6: """🏦 <b>Step 6: Open an Italian Bank Account</b>
+
+━━━━━━━━━━━━━━━━━━━━━
+
+🥇 <b>Postepay Evolution (Recommended for arrival):</b>
+• ✅ Can be opened with just your Ricevuta (postal receipt)!
+• Includes a full Italian IBAN
+• Annual fee: €15
+• Available at any Poste Italiane branch
+
+🥈 <b>UniCredit MyGenius Green:</b>
+• Free account for university students
+• Usually requires final Permesso plastic card
+
+🥉 <b>Intesa Sanpaolo XME:</b>
+• Free under 35 years old
+• Wide branch and ATM network
+
+📄 <b>Standard Documents:</b>
+• Passport
+• Codice Fiscale
+• Permesso Ricevuta or card
+• Rental contract or address declaration""",
+            7: """👆 <b>Step 7: Fingerprinting & Residence Card Collection</b>
+
+━━━━━━━━━━━━━━━━━━━━━
+
+👮 <b>Immigration Office:</b>
+Questura - Ufficio Immigrazione
+📍 Via del Tabacchificio, 21, Ellera di Corciano
+
+🚌 <b>Transport:</b> Bus Line G or regional train to Ellera station
+
+📄 <b>What to bring on appointment day:</b>
+• Original Passport
+• Postal Receipt (Ricevuta) and appointment letter
+• 4 passport-size photographs
+• Originals of all documents previously submitted in the postal kit
+
+⏳ <b>Card Production:</b> 1 to 3 months
+🌐 <b>Check Status:</b> <a href='https://www.portaleimmigrazione.it'>portaleimmigrazione.it</a>
+
+🎉 <b>Congratulations!</b> Once collected, your official Italian residence permit is active!"""
+        }
+        if step_id in en_steps:
+            return en_steps[step_id], None, loc_keys.get(step_id)
+        return "⚠️ Step not found. Please return to the Guide menu.", None, None
+
+    elif lang_code == "it":
+        it_steps = {
+            1: """🆔 <b>Passo 1: Richiesta del Codice Fiscale</b>
+
+━━━━━━━━━━━━━━━━━━━━━
+
+Il codice identificativo fondamentale in Italia! Indispensabile per contratti d'affitto, conti correnti e SIM.
+
+🏢 <b>Dove?</b>
+Agenzia delle Entrate
+📍 Via Canali, 12, Perugia
+
+⏰ <b>Orari:</b>
+Lunedì - Venerdì 08:30 - 13:00
+
+⚠️ <b>Importante:</b> La prenotazione online è obbligatoria!
+🌐 <a href='https://www.agenziaentrate.gov.it/portale/prenotazione'>Prenota Online</a>
+
+📄 <b>Documenti richiesti:</b>
+• Passaporto (Originale + Copia)
+• Visto di studio (Copia)
+
+💰 <b>Costo:</b> Gratuito
+⏳ <b>Tempo:</b> 10-15 minuti
+
+💡 <b>Consiglio:</b> Salva una foto della ricevuta sul telefono!""",
+            2: """📱 <b>Passo 2: Acquisto SIM Italiana</b>
+
+━━━━━━━━━━━━━━━━━━━━━
+
+Un numero italiano è indispensabile per la burocrazia, banche e università!
+
+🥇 <b>Iliad (Consigliato):</b>
+• 150GB + Minuti/SMS illimitati
+• 9,99 €/mese
+• eSIM disponibile ✅
+• 🌐 <a href='https://www.iliad.it'>iliad.it</a>
+
+🥈 <b>Vodafone:</b>
+• Ottima copertura
+• Da 12 €/mese
+• 🌐 <a href='https://www.vodafone.it'>vodafone.it</a>
+
+🥉 <b>TIM:</b>
+• Copertura affidabile
+• Da 10 €/mese
+• 🌐 <a href='https://www.tim.it'>tim.it</a>
+
+📄 <b>Documenti:</b> Passaporto e Codice Fiscale.""",
+            3: """🏥 <b>Passo 3: Assicurazione Sanitaria</b>
+
+━━━━━━━━━━━━━━━━━━━━━
+
+Obbligatoria per la richiesta del permesso di soggiorno!
+
+🟢 <b>W.A.I. (Welcome Association Italy):</b>
+• Costo: 120 €/anno
+• Copre emergenze e ricoveri
+• Procedura rapida online: <a href='https://www.waitaly.net'>waitaly.net</a>
+
+🔵 <b>Iscrizione Volontaria SSN:</b>
+• Copertura completa con medico di base (Tessera Sanitaria)
+• Iscrizione presso ASL Umbria 1
+
+📄 <b>Documenti:</b> Passaporto, Codice Fiscale, lettera di immatricolazione.""",
+            4: """🎓 <b>Passo 4: Immatricolazione Universitaria</b>
+
+━━━━━━━━━━━━━━━━━━━━━
+
+🏛 <b>Università degli Studi di Perugia</b>
+📍 Piazza dell'Università, 1
+
+🌐 <b>Portale SOL:</b> <a href='https://unipg.esse3.cineca.it'>SOL UniPG</a>
+📧 <b>Ufficio Internazionale:</b> international.students@unipg.it
+
+📄 <b>Documenti necessari:</b>
+• Lettera di ammissione
+• Passaporto e visto
+• Codice Fiscale
+• Dichiarazione di Valore (DoV) o Attestato CIMEA
+• Certificato linguistico (se previsto)
+• Fototessere
+
+💰 <b>Tassa regionale iniziale:</b> ~156 € + 16 € Marca da bollo""",
+            5: """🛂 <b>Passo 5: Richiesta del Permesso di Soggiorno (Kit Giallo)</b>
+
+━━━━━━━━━━━━━━━━━━━━━
+
+⚠️ <b>Scadenza tassativa: entro 8 giorni lavorativi dall'arrivo!</b>
+
+📮 <b>Primo passo: Ufficio Postale (Poste Italiane)</b>
+📍 Piazza Giacomo Matteotti, 14, Perugia
+• Ritira gratuitamente il Kit Postale (busta gialla)
+• Acquista una Marca da bollo da 16,00 € in tabaccheria
+
+📄 <b>Documenti da inserire nel kit:</b>
+• Fotocopia di tutte le pagine del passaporto
+• Certificato di iscrizione all'università
+• Copia dell'assicurazione sanitaria
+• Copia del Codice Fiscale
+• Prova di mezzi economici
+• Marca da bollo da 16 € applicata sul Modulo 1
+
+💰 <b>Costo postale allo sportello:</b> Circa 130-140 €
+
+📋 <b>Dopo l'invio:</b>
+• Riceverai la Ricevuta postale e la data dell'appuntamento in Questura
+• ⚠️ CONSERVA SEMPRE LA RICEVUTA! Ha pieno valore legale.
+🌐 <b>Verifica stato:</b> <a href='https://www.portaleimmigrazione.it'>portaleimmigrazione.it</a>""",
+            6: """🏦 <b>Passo 6: Apertura Conto Bancario</b>
+
+━━━━━━━━━━━━━━━━━━━━━
+
+🥇 <b>Postepay Evolution (Consigliata per i primi mesi):</b>
+• ✅ Si apre con la sola Ricevuta del permesso postale!
+• Dotata di IBAN italiano
+• Canone annuo: 15 €
+• Disponibile in qualsiasi ufficio postale
+
+🥈 <b>UniCredit MyGenius Green / Intesa Sanpaolo:</b>
+• Conti dedicati agli studenti universitari
+• Spesso richiedono il permesso di soggiorno definitivo
+
+📄 <b>Documenti richiesti:</b>
+• Passaporto
+• Codice Fiscale
+• Ricevuta postale del permesso
+• Contratto d'affitto o certificato di residenza""",
+            7: """👆 <b>Passo 7: Fotosegnalamento e Ritiro Permesso</b>
+
+━━━━━━━━━━━━━━━━━━━━━
+
+👮 <b>Questura - Ufficio Immigrazione:</b>
+📍 Via del Tabacchificio, 21, Ellera di Corciano
+
+🚌 <b>Collegamenti:</b> Bus Linea G o treno regionale per Ellera
+
+📄 <b>Documenti per il giorno dell'appuntamento:</b>
+• Passaporto originale
+• Ricevuta postale e foglio di convocazione
+• 4 fototessere formato tessera identiche
+• Originali di tutti i documenti inseriti nel kit
+
+⏳ <b>Tempi di emissione:</b> 1 - 3 mesi
+🌐 <b>Verifica stato:</b> <a href='https://www.portaleimmigrazione.it'>portaleimmigrazione.it</a>
+
+🎉 <b>Congratulazioni!</b> Il tuo soggiorno legale in Italia è completato!"""
+        }
+        if step_id in it_steps:
+            return it_steps[step_id], None, loc_keys.get(step_id)
+        return "⚠️ Passo non trovato. Torna al menu della Guida.", None, None
+
+    # زبان فارسی (پیش‌فرض)
     if step_id == 1:
         content = """🆔 <b>مرحله ۱: دریافت کدیچه فیسکاله (Codice Fiscale)</b>
 
@@ -613,13 +942,14 @@ def search_in_guide(query: str) -> List[Dict[str, Any]]:
 # ۵. کیبوردها
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def get_guide_main_keyboard() -> InlineKeyboardMarkup:
+def get_guide_main_keyboard(lang_code: str = "fa") -> InlineKeyboardMarkup:
     """کیبورد منوی اصلی راهنما"""
     
     buttons = []
+    steps = STEPS_DATA_LOCALIZED.get(lang_code, STEPS_DATA_LOCALIZED["fa"])
     
     # مراحل
-    for key, step in STEPS_DATA.items():
+    for key, step in steps.items():
         buttons.append([
             InlineKeyboardButton(
                 text=f"{step['emoji']} {key}. {step['title']}",
@@ -627,39 +957,79 @@ def get_guide_main_keyboard() -> InlineKeyboardMarkup:
             )
         ])
     
-    # بخش‌های دیگر
-    buttons.extend([
-        [
-            InlineKeyboardButton(text="💰 هزینه‌های زندگی", callback_data="guide:costs"),
-            InlineKeyboardButton(text="📍 لوکیشن‌ها", callback_data="guide:locations"),
-        ],
-        [
-            InlineKeyboardButton(text="📱 اپلیکیشن‌ها", callback_data="guide:apps"),
-            InlineKeyboardButton(text="💡 نکات طلایی", callback_data="guide:tips"),
-        ],
-        [
-            InlineKeyboardButton(text="❓ سوالات متداول", callback_data="guide:faq"),
-            InlineKeyboardButton(text="🔍 جستجو", callback_data="guide:search"),
-        ],
-        [
-            InlineKeyboardButton(text="🏠 منوی اصلی", callback_data="main_menu"),
-        ],
-    ])
+    # بخش‌های دیگر بر اساس زبان
+    if lang_code == "en":
+        buttons.extend([
+            [
+                InlineKeyboardButton(text="💰 Living Costs", callback_data="guide:costs"),
+                InlineKeyboardButton(text="📍 Locations", callback_data="guide:locations"),
+            ],
+            [
+                InlineKeyboardButton(text="📱 Essential Apps", callback_data="guide:apps"),
+                InlineKeyboardButton(text="💡 Golden Tips", callback_data="guide:tips"),
+            ],
+            [
+                InlineKeyboardButton(text="❓ FAQ", callback_data="guide:faq"),
+                InlineKeyboardButton(text="🔍 Search Guide", callback_data="guide:search"),
+            ],
+            [
+                InlineKeyboardButton(text="🏠 Main Menu", callback_data="main_menu"),
+            ],
+        ])
+    elif lang_code == "it":
+        buttons.extend([
+            [
+                InlineKeyboardButton(text="💰 Costo della Vita", callback_data="guide:costs"),
+                InlineKeyboardButton(text="📍 Luoghi Importanti", callback_data="guide:locations"),
+            ],
+            [
+                InlineKeyboardButton(text="📱 App Utili", callback_data="guide:apps"),
+                InlineKeyboardButton(text="💡 Consigli Utili", callback_data="guide:tips"),
+            ],
+            [
+                InlineKeyboardButton(text="❓ FAQ", callback_data="guide:faq"),
+                InlineKeyboardButton(text="🔍 Cerca nella Guida", callback_data="guide:search"),
+            ],
+            [
+                InlineKeyboardButton(text="🏠 Menu Principale", callback_data="main_menu"),
+            ],
+        ])
+    else:
+        buttons.extend([
+            [
+                InlineKeyboardButton(text="💰 هزینه‌های زندگی", callback_data="guide:costs"),
+                InlineKeyboardButton(text="📍 لوکیشن‌ها", callback_data="guide:locations"),
+            ],
+            [
+                InlineKeyboardButton(text="📱 اپلیکیشن‌های ضروری", callback_data="guide:apps"),
+                InlineKeyboardButton(text="💡 نکات طلایی", callback_data="guide:tips"),
+            ],
+            [
+                InlineKeyboardButton(text="❓ سوالات متداول", callback_data="guide:faq"),
+                InlineKeyboardButton(text="🔍 جستجو در راهنما", callback_data="guide:search"),
+            ],
+            [
+                InlineKeyboardButton(text="🏠 منوی اصلی", callback_data="main_menu"),
+            ],
+        ])
     
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-def get_step_nav_keyboard(step_id: int) -> InlineKeyboardMarkup:
+def get_step_nav_keyboard(step_id: int, lang_code: str = "fa") -> InlineKeyboardMarkup:
     """کیبورد ناوبری مراحل"""
     
     buttons = []
     nav_row = []
     
+    prev_txt = f"⬅️ مرحله {step_id - 1}" if lang_code == "fa" else (f"⬅️ Step {step_id - 1}" if lang_code == "en" else f"⬅️ Passo {step_id - 1}")
+    next_txt = f"مرحله {step_id + 1} ➡️" if lang_code == "fa" else (f"Step {step_id + 1} ➡️" if lang_code == "en" else f"Passo {step_id + 1} ➡️")
+    
     # دکمه قبلی
     if step_id > 1:
         nav_row.append(
             InlineKeyboardButton(
-                text=f"⬅️ مرحله {step_id - 1}",
+                text=prev_txt,
                 callback_data=f"guide:step_{step_id - 1}"
             )
         )
@@ -668,7 +1038,7 @@ def get_step_nav_keyboard(step_id: int) -> InlineKeyboardMarkup:
     if step_id < len(STEPS_DATA):
         nav_row.append(
             InlineKeyboardButton(
-                text=f"مرحله {step_id + 1} ➡️",
+                text=next_txt,
                 callback_data=f"guide:step_{step_id + 1}"
             )
         )
@@ -677,33 +1047,36 @@ def get_step_nav_keyboard(step_id: int) -> InlineKeyboardMarkup:
         buttons.append(nav_row)
     
     # لوکیشن مرتبط
-    _, _, loc_key = get_step_content(step_id)
+    _, _, loc_key = get_step_content(step_id, lang_code)
     if loc_key:
+        loc_txt = "📍 نمایش لوکیشن" if lang_code == "fa" else ("📍 Show Location" if lang_code == "en" else "📍 Mostra Posizione")
         buttons.append([
             InlineKeyboardButton(
-                text="📍 نمایش لوکیشن",
+                text=loc_txt,
                 callback_data=f"guide:loc_{loc_key}"
             )
         ])
     
     # بازگشت و سوال
+    back_txt = "🔙 منوی راهنما" if lang_code == "fa" else ("🔙 Guide Menu" if lang_code == "en" else "🔙 Menu Guida")
+    consult_txt = "❓ سوال دارم" if lang_code == "fa" else ("❓ Ask a Question" if lang_code == "en" else "❓ Fai una Domanda")
+    
     buttons.extend([
         [
-            InlineKeyboardButton(text="🔙 منوی راهنما", callback_data="guide:main"),
+            InlineKeyboardButton(text=back_txt, callback_data="guide:main"),
         ],
         [
-            InlineKeyboardButton(text="❓ سوال دارم", callback_data="consult"),
+            InlineKeyboardButton(text=consult_txt, callback_data="consult"),
         ],
     ])
     
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-def get_locations_keyboard() -> InlineKeyboardMarkup:
+def get_locations_keyboard(lang_code: str = "fa") -> InlineKeyboardMarkup:
     """کیبورد لوکیشن‌ها"""
     
     buttons = []
-    
     for key, loc in LOCATIONS.items():
         buttons.append([
             InlineKeyboardButton(
@@ -712,19 +1085,22 @@ def get_locations_keyboard() -> InlineKeyboardMarkup:
             )
         ])
     
+    back_txt = "🔙 منوی راهنما" if lang_code == "fa" else ("🔙 Guide Menu" if lang_code == "en" else "🔙 Menu Guida")
     buttons.append([
-        InlineKeyboardButton(text="🔙 منوی راهنما", callback_data="guide:main")
+        InlineKeyboardButton(text=back_txt, callback_data="guide:main")
     ])
     
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-def get_back_to_guide_keyboard() -> InlineKeyboardMarkup:
+def get_back_to_guide_keyboard(lang_code: str = "fa") -> InlineKeyboardMarkup:
     """کیبورد بازگشت"""
+    back_txt = "🔙 منوی راهنما" if lang_code == "fa" else ("🔙 Guide Menu" if lang_code == "en" else "🔙 Menu Guida")
+    main_txt = "🏠 منوی اصلی" if lang_code == "fa" else ("🏠 Main Menu" if lang_code == "en" else "🏠 Menu Principale")
     return InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="🔙 منوی راهنما", callback_data="guide:main"),
-            InlineKeyboardButton(text="🏠 منو اصلی", callback_data="main_menu"),
+            InlineKeyboardButton(text=back_txt, callback_data="guide:main"),
+            InlineKeyboardButton(text=main_txt, callback_data="main_menu"),
         ]
     ])
 
@@ -739,8 +1115,35 @@ async def guide_menu(callback: CallbackQuery, state: FSMContext):
     """منوی اصلی راهنما"""
     
     await state.clear()
+    user_id = callback.from_user.id
+    lang_code = get_user_lang_code(user_id)
     
-    text = """🗺 <b>راهنمای کامل پروجا</b>
+    if lang_code == "en":
+        text = """🗺 <b>Comprehensive Perugia Student Guide</b>
+
+━━━━━━━━━━━━━━━━━━━━━
+
+🎉 Welcome to beautiful Perugia!
+
+This guide covers all key bureaucratic steps, housing, and everyday student life in Italy.
+
+<b>Complete the steps in sequential order:</b>
+
+👇 Select an option:"""
+    elif lang_code == "it":
+        text = """🗺 <b>Guida Completa per Studenti a Perugia</b>
+
+━━━━━━━━━━━━━━━━━━━━━
+
+🎉 Benvenuto nella splendida Perugia!
+
+Questa guida ti accompagna in tutti i passaggi burocratici, alloggio e vita universitaria.
+
+<b>Segui i passaggi in ordine progressivo:</b>
+
+👇 Scegli un'opzione:"""
+    else:
+        text = """🗺 <b>راهنمای کامل پروجا</b>
 
 ━━━━━━━━━━━━━━━━━━━━━
 
@@ -755,7 +1158,7 @@ async def guide_menu(callback: CallbackQuery, state: FSMContext):
     await safe_edit_text(
         callback.message,
         text=text,
-        reply_markup=get_guide_main_keyboard()
+        reply_markup=get_guide_main_keyboard(lang_code)
     )
     
     await callback.answer()
@@ -766,8 +1169,27 @@ async def cmd_guide(message: Message, state: FSMContext):
     """دستور راهنما"""
     
     await state.clear()
+    user_id = message.from_user.id
+    lang_code = get_user_lang_code(user_id)
     
-    text = """🗺 <b>راهنمای کامل پروجا</b>
+    if lang_code == "en":
+        text = """🗺 <b>Comprehensive Perugia Student Guide</b>
+
+━━━━━━━━━━━━━━━━━━━━━
+
+🎉 Welcome to Perugia!
+
+👇 Select an option:"""
+    elif lang_code == "it":
+        text = """🗺 <b>Guida Completa per Studenti a Perugia</b>
+
+━━━━━━━━━━━━━━━━━━━━━
+
+🎉 Benvenuto a Perugia!
+
+👇 Scegli un'opzione:"""
+    else:
+        text = """🗺 <b>راهنمای کامل پروجا</b>
 
 ━━━━━━━━━━━━━━━━━━━━━
 
@@ -777,7 +1199,7 @@ async def cmd_guide(message: Message, state: FSMContext):
     
     await message.answer(
         text=text,
-        reply_markup=get_guide_main_keyboard(),
+        reply_markup=get_guide_main_keyboard(lang_code),
         parse_mode=ParseMode.HTML
     )
 
@@ -790,26 +1212,30 @@ async def cmd_guide(message: Message, state: FSMContext):
 @router.callback_query(F.data.startswith("guide_step_"))
 async def show_step_detail(callback: CallbackQuery):
     """نمایش جزئیات مرحله"""
+    user_id = callback.from_user.id
+    lang_code = get_user_lang_code(user_id)
     
     # استخراج شماره مرحله
     step_str = callback.data.split("_")[-1]
     
     if not step_str.isdigit():
-        await callback.answer("❌ خطا!", show_alert=True)
+        err_txt = "❌ Error!" if lang_code == "en" else ("❌ Errore!" if lang_code == "it" else "❌ خطا!")
+        await callback.answer(err_txt, show_alert=True)
         return
     
     step_id = int(step_str)
     
     if step_id < 1 or step_id > len(STEPS_DATA):
-        await callback.answer("❌ مرحله نامعتبر!", show_alert=True)
+        err_txt = "❌ Invalid step!" if lang_code == "en" else ("❌ Passo non valido!" if lang_code == "it" else "❌ مرحله نامعتبر!")
+        await callback.answer(err_txt, show_alert=True)
         return
     
-    content, photo_url, _ = get_step_content(step_id)
+    content, photo_url, _ = get_step_content(step_id, lang_code)
     
     await safe_edit_text(
         callback.message,
         text=content,
-        reply_markup=get_step_nav_keyboard(step_id)
+        reply_markup=get_step_nav_keyboard(step_id, lang_code)
     )
     
     await callback.answer()
@@ -823,8 +1249,81 @@ async def show_step_detail(callback: CallbackQuery):
 @router.callback_query(F.data == "guide_costs")
 async def guide_costs(callback: CallbackQuery):
     """هزینه‌های زندگی"""
+    user_id = callback.from_user.id
+    lang_code = get_user_lang_code(user_id)
     
-    text = """💰 <b>هزینه‌های ماهانه زندگی در پروجا (۲۰۲۵)</b>
+    if lang_code == "en":
+        text = """💰 <b>Monthly Cost of Living in Perugia (2025)</b>
+
+━━━━━━━━━━━━━━━━━━━━━
+
+🏠 <b>Accommodation:</b>
+• Shared Room: €300 - €380
+• Single Room: €380 - €450
+• Full Studio / Flat: €550 - €800
+
+🍽 <b>Food & Groceries:</b>
+• Home Cooking: €150 - €200
+• University Mensa (ADISU): €4 - €6 per meal
+• Dining out: +€50 - €100
+
+🚌 <b>Transport:</b>
+• Monthly Bus Pass (Salgo): €25 - €35
+• Minimetrò: €1.50 single ride
+
+📱 <b>Mobile & Internet:</b>
+• SIM plan (Iliad): €10 - €15
+
+⚡ <b>Utilities (if not included):</b>
+• Electricity/Gas/Water: €50 - €80
+
+☕ <b>Leisure & Personal:</b>
+• €100 - €150
+
+━━━━━━━━━━━━━━━━━━━━━
+
+📊 <b>Estimated Total:</b>
+<b>€650 - €1,000 / month</b>
+
+💡 <b>With DSU Regional Scholarship:</b>
+Housing & cafeteria meals are largely subsidized!"""
+    elif lang_code == "it":
+        text = """💰 <b>Costo della Vita Mensile a Perugia (2025)</b>
+
+━━━━━━━━━━━━━━━━━━━━━
+
+🏠 <b>Alloggio:</b>
+• Posto letto in doppia: 300 - 380 €
+• Stanza singola: 380 - 450 €
+• Monolocale / Bilocale: 550 - 800 €
+
+🍽 <b>Cibo e Spesa:</b>
+• Spesa a casa: 150 - 200 €
+• Mensa universitaria ADISU: 4 - 6 € a pasto
+• Cene fuori: +50 - 100 €
+
+🚌 <b>Trasporti:</b>
+• Abbonamento mensile bus (Salgo): 25 - 35 €
+• Minimetrò: 1,50 € corsa singola
+
+📱 <b>SIM e Internet:</b>
+• Piano mobile (Iliad): 10 - 15 €
+
+⚡ <b>Utenze (se escluse):</b>
+• Luce/Gas/Acqua: 50 - 80 €
+
+☕ <b>Svago e varie:</b>
+• 100 - 150 €
+
+━━━━━━━━━━━━━━━━━━━━━
+
+📊 <b>Totale stimato:</b>
+<b>650 - 1.000 € / mese</b>
+
+💡 <b>Con Borsa di Studio DSU:</b>
+I costi di vitto e alloggio possono essere coperti per gli aventi diritto!"""
+    else:
+        text = """💰 <b>هزینه‌های ماهانه زندگی در پروجا (۲۰۲۵)</b>
 
 ━━━━━━━━━━━━━━━━━━━━━
 
@@ -862,7 +1361,7 @@ async def guide_costs(callback: CallbackQuery):
     await safe_edit_text(
         callback.message,
         text=text,
-        reply_markup=get_back_to_guide_keyboard()
+        reply_markup=get_back_to_guide_keyboard(lang_code)
     )
     
     await callback.answer()
@@ -876,8 +1375,31 @@ async def guide_costs(callback: CallbackQuery):
 @router.callback_query(F.data == "guide_locations")
 async def guide_locations(callback: CallbackQuery):
     """منوی لوکیشن‌ها"""
+    user_id = callback.from_user.id
+    lang_code = get_user_lang_code(user_id)
     
-    text = """📍 <b>لوکیشن‌های مهم پروجا</b>
+    if lang_code == "en":
+        text = """📍 <b>Important Student Locations in Perugia</b>
+
+━━━━━━━━━━━━━━━━━━━━━
+
+Tap any venue below to send its official geolocation pin.
+
+You can directly navigate with Google Maps or Apple Maps! 🗺
+
+👇 Select a location:"""
+    elif lang_code == "it":
+        text = """📍 <b>Punti di Interesse per Studenti a Perugia</b>
+
+━━━━━━━━━━━━━━━━━━━━━
+
+Tocca un luogo per visualizzare la posizione sulla mappa di Telegram.
+
+Puoi avviare direttamente la navigazione GPS! 🗺
+
+👇 Scegli un punto:"""
+    else:
+        text = """📍 <b>لوکیشن‌های مهم پروجا</b>
 
 ━━━━━━━━━━━━━━━━━━━━━
 
@@ -890,7 +1412,7 @@ async def guide_locations(callback: CallbackQuery):
     await safe_edit_text(
         callback.message,
         text=text,
-        reply_markup=get_locations_keyboard()
+        reply_markup=get_locations_keyboard(lang_code)
     )
     
     await callback.answer()
@@ -900,6 +1422,8 @@ async def guide_locations(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("loc_send_"))
 async def send_location(callback: CallbackQuery):
     """ارسال لوکیشن"""
+    user_id = callback.from_user.id
+    lang_code = get_user_lang_code(user_id)
     
     # استخراج کلید
     if "loc_send_" in callback.data:
@@ -908,7 +1432,8 @@ async def send_location(callback: CallbackQuery):
         key = callback.data.replace("guide:loc_", "")
     
     if key not in LOCATIONS:
-        await callback.answer("❌ مکان یافت نشد!", show_alert=True)
+        err_txt = "❌ Location not found!" if lang_code == "en" else ("❌ Luogo non trovato!" if lang_code == "it" else "❌ مکان یافت نشد!")
+        await callback.answer(err_txt, show_alert=True)
         return
     
     loc = LOCATIONS[key]
@@ -921,6 +1446,8 @@ async def send_location(callback: CallbackQuery):
         address=loc["address"]
     )
     
+    hours_lbl = "Opening Hours" if lang_code == "en" else ("Orari di apertura" if lang_code == "it" else "ساعت کاری")
+    
     # پیام توضیحی
     info_text = f"""📍 <b>{loc['title']}</b>
 
@@ -928,12 +1455,12 @@ async def send_location(callback: CallbackQuery):
 
 📝 {loc['desc']}
 
-⏰ <b>ساعت کاری:</b>
+⏰ <b>{hours_lbl}:</b>
 {loc['hours']}"""
     
     await callback.message.answer(
         text=info_text,
-        reply_markup=get_back_to_guide_keyboard(),
+        reply_markup=get_back_to_guide_keyboard(lang_code),
         parse_mode=ParseMode.HTML
     )
     
@@ -948,8 +1475,27 @@ async def send_location(callback: CallbackQuery):
 @router.callback_query(F.data == "guide_apps")
 async def guide_apps(callback: CallbackQuery):
     """اپلیکیشن‌های ضروری"""
+    user_id = callback.from_user.id
+    lang_code = get_user_lang_code(user_id)
     
-    text = """📱 <b>اپلیکیشن‌های ضروری</b>
+    if lang_code == "en":
+        text = """📱 <b>Essential Student Apps in Italy</b>
+
+━━━━━━━━━━━━━━━━━━━━━
+
+These mobile apps make daily life and transit much easier:
+
+"""
+    elif lang_code == "it":
+        text = """📱 <b>Applicazioni Utili per Studenti</b>
+
+━━━━━━━━━━━━━━━━━━━━━
+
+Le app indispensabili per la vita universitaria e i trasporti:
+
+"""
+    else:
+        text = """📱 <b>اپلیکیشن‌های ضروری</b>
 
 ━━━━━━━━━━━━━━━━━━━━━
 
@@ -974,8 +1520,9 @@ async def guide_apps(callback: CallbackQuery):
             ),
         ])
     
+    back_txt = "🔙 منوی راهنما" if lang_code == "fa" else ("🔙 Guide Menu" if lang_code == "en" else "🔙 Menu Guida")
     buttons.append([
-        InlineKeyboardButton(text="🔙 منوی راهنما", callback_data="guide:main")
+        InlineKeyboardButton(text=back_txt, callback_data="guide:main")
     ])
     
     await safe_edit_text(
@@ -995,8 +1542,77 @@ async def guide_apps(callback: CallbackQuery):
 @router.callback_query(F.data == "guide_tips")
 async def guide_tips(callback: CallbackQuery):
     """نکات طلایی"""
+    user_id = callback.from_user.id
+    lang_code = get_user_lang_code(user_id)
     
-    text = """💡 <b>نکات طلایی و هشدارها</b>
+    if lang_code == "en":
+        text = """💡 <b>Golden Advice & Key Warnings</b>
+
+━━━━━━━━━━━━━━━━━━━━━
+
+🔴 <b>Crucial Warnings:</b>
+
+⚠️ Submit your residence permit kit within <b>8 business days</b>! Delays can cause serious issues.
+
+⚠️ Watch out for rental scams! Never transfer deposits without an official contract.
+
+⚠️ Never lose your Postal Receipt (Ricevuta)! It is your primary proof of legal stay.
+
+⚠️ W.A.I. health policy might not suffice for residence renewal; check with Questura.
+
+━━━━━━━━━━━━━━━━━━━━━
+
+🟢 <b>Top Practical Tips:</b>
+
+✅ <b>Iliad</b> is the most cost-effective SIM for incoming students.
+
+✅ <b>Postepay Evolution</b> can be opened with just your postal Ricevuta.
+
+✅ Download <b>Salgo</b> to purchase bus and minimetrò tickets easily.
+
+✅ University cafeterias (ADISU Mensa) provide full student meals starting at €4.
+
+✅ Use <b>Too Good To Go</b> to save significantly on bakeries & groceries.
+
+✅ Arrive early in the morning when visiting the Questura or public offices.
+
+━━━━━━━━━━━━━━━━━━━━━
+
+🇮🇹 You've got this! Best of luck with your journey! ✨"""
+    elif lang_code == "it":
+        text = """💡 <b>Consigli d'Oro e Avvertenze</b>
+
+━━━━━━━━━━━━━━━━━━━━━
+
+🔴 <b>Avvertenze importanti:</b>
+
+⚠️ Invia il kit del permesso entro <b>8 giorni lavorativi</b> dall'ingresso!
+
+⚠️ Attenzione alle truffe sugli affitti: richiedi sempre un regolare contratto registrato.
+
+⚠️ Custodisci la Ricevuta postale: è il tuo documento provvisorio valido a tutti gli effetti.
+
+━━━━━━━━━━━━━━━━━━━━━
+
+🟢 <b>Consigli pratici:</b>
+
+✅ <b>Iliad</b> offre ottimi pacchetti con SIM o eSIM attive subito.
+
+✅ <b>Postepay Evolution</b> si attiva subito con la sola Ricevuta postale.
+
+✅ Usa l'app <b>Salgo</b> per acquistare i titoli di viaggio per autobus e minimetrò.
+
+✅ Le mense ADISU offrono pasti completi di ottima qualità a prezzi calmierati.
+
+✅ Scarica <b>Too Good To Go</b> per risparmiare su alimentari e prodotti da forno.
+
+✅ Presentati presto al mattino presso gli uffici pubblici per evitare lunghe attese.
+
+━━━━━━━━━━━━━━━━━━━━━
+
+🇮🇹 Buona permanenza e buon studio a Perugia! ✨"""
+    else:
+        text = """💡 <b>نکات طلایی و هشدارها</b>
 
 ━━━━━━━━━━━━━━━━━━━━━
 
@@ -1039,7 +1655,7 @@ async def guide_tips(callback: CallbackQuery):
     await safe_edit_text(
         callback.message,
         text=text,
-        reply_markup=get_back_to_guide_keyboard()
+        reply_markup=get_back_to_guide_keyboard(lang_code)
     )
     
     await callback.answer()
@@ -1052,25 +1668,80 @@ async def guide_tips(callback: CallbackQuery):
 @router.callback_query(F.data == "guide:faq")
 async def guide_faq(callback: CallbackQuery):
     """سوالات متداول"""
+    user_id = callback.from_user.id
+    lang_code = get_user_lang_code(user_id)
     
-    text = """❓ <b>سوالات متداول (FAQ)</b>
+    if lang_code == "en":
+        text = """❓ <b>Frequently Asked Questions (FAQ)</b>
+
+━━━━━━━━━━━━━━━━━━━━━
+
+<b>1. How many days after arrival must I apply for Permesso?</b>
+⚠️ Within <b>8 business days!</b> This is mandatory by Italian immigration law.
+
+<b>2. Can I open a bank account with just the postal receipt (Ricevuta)?</b>
+✅ Yes! <b>Postepay Evolution</b> at Poste Italiane opens with just your Ricevuta and passport.
+
+<b>3. Is W.A.I. insurance sufficient for permit renewal?</b>
+⚠️ For the <b>first permit</b> it is accepted. For <b>renewal</b>, Questura often requests SSN public registration.
+
+<b>4. What is the average monthly cost of living in Perugia?</b>
+💰 <b>€650 - €1,000</b> (Substantially lower with DSU regional housing/dining perks).
+
+<b>5. Which mobile SIM provider is best?</b>
+🥇 <b>Iliad</b>: €9.99/mo for 150GB + unlimited local minutes. Fast setup with eSIM.
+
+━━━━━━━━━━━━━━━━━━━━━
+
+💬 Have another specific question? Use our consultation and advisory desk!"""
+        buttons = [
+            [InlineKeyboardButton(text="💬 Ask a Question", callback_data="consult")],
+            [InlineKeyboardButton(text="🔙 Guide Menu", callback_data="guide:main")],
+        ]
+    elif lang_code == "it":
+        text = """❓ <b>Domande Frequenti (FAQ)</b>
+
+━━━━━━━━━━━━━━━━━━━━━
+
+<b>1. Entro quanti giorni dall'arrivo devo richiedere il permesso?</b>
+⚠️ Entro <b>8 giorni lavorativi!</b>
+
+<b>2. Posso aprire un conto bancario con la sola Ricevuta postale?</b>
+✅ Sì! La carta <b>Postepay Evolution</b> di Poste Italiane è accessibile con la sola Ricevuta.
+
+<b>3. L'assicurazione W.A.I. è accettata per il rinnovo?</b>
+⚠️ È ottima per il <b>primo rilascio</b>, mentre per i <b>rinnovi</b> la Questura richiede spesso l'iscrizione al SSN.
+
+<b>4. Qual è il costo della vita mensile medio a Perugia?</b>
+💰 Circa <b>650 - 1.000 €</b> a seconda dell'alloggio.
+
+<b>5. Quale operatore telefonico è consigliato?</b>
+🥇 <b>Iliad</b>: 9,99 €/mese con 150GB e minuti illimitati.
+
+━━━━━━━━━━━━━━━━━━━━━
+
+💬 Hai altre domande specifiche? Contatta il nostro servizio di consulenza!"""
+        buttons = [
+            [InlineKeyboardButton(text="💬 Fai una Domanda", callback_data="consult")],
+            [InlineKeyboardButton(text="🔙 Menu Guida", callback_data="guide:main")],
+        ]
+    else:
+        text = """❓ <b>سوالات متداول (FAQ)</b>
 
 ━━━━━━━━━━━━━━━━━━━━━
 
 """
-    
-    for i, faq in enumerate(FAQ_DATA, 1):
-        text += f"<b>{i}. {faq['q']}</b>\n"
-        text += f"{faq['a']}\n\n"
-    
-    text += """━━━━━━━━━━━━━━━━━━━━━
+        for i, faq in enumerate(FAQ_DATA, 1):
+            text += f"<b>{i}. {faq['q']}</b>\n"
+            text += f"{faq['a']}\n\n"
+        
+        text += """━━━━━━━━━━━━━━━━━━━━━
 
 💬 سوال دیگری دارید؟ از بخش مشاوره استفاده کنید!"""
-    
-    buttons = [
-        [InlineKeyboardButton(text="💬 سوال دارم", callback_data="consult")],
-        [InlineKeyboardButton(text="🔙 منوی راهنما", callback_data="guide:main")],
-    ]
+        buttons = [
+            [InlineKeyboardButton(text="💬 سوال دارم", callback_data="consult")],
+            [InlineKeyboardButton(text="🔙 منوی راهنما", callback_data="guide:main")],
+        ]
     
     await safe_edit_text(
         callback.message,
@@ -1088,10 +1759,35 @@ async def guide_faq(callback: CallbackQuery):
 @router.callback_query(F.data == "guide:search")
 async def start_search(callback: CallbackQuery, state: FSMContext):
     """شروع جستجو"""
+    user_id = callback.from_user.id
+    lang_code = get_user_lang_code(user_id)
     
     await state.set_state(GuideStates.searching)
     
-    text = """🔍 <b>جستجو در راهنما</b>
+    if lang_code == "en":
+        text = """🔍 <b>Search Student Guide</b>
+
+━━━━━━━━━━━━━━━━━━━━━
+
+Type your search keyword:
+
+💡 <i>Examples: permesso, insurance, bank, sim, questura</i>
+
+❌ Cancel: /cancel"""
+        cancel_txt = "❌ Cancel"
+    elif lang_code == "it":
+        text = """🔍 <b>Cerca nella Guida</b>
+
+━━━━━━━━━━━━━━━━━━━━━
+
+Digita la parola chiave da cercare:
+
+💡 <i>Esempi: permesso, assicurazione, conto, sim, questura</i>
+
+❌ Annulla: /cancel"""
+        cancel_txt = "❌ Annulla"
+    else:
+        text = """🔍 <b>جستجو در راهنما</b>
 
 ━━━━━━━━━━━━━━━━━━━━━
 
@@ -1100,12 +1796,13 @@ async def start_search(callback: CallbackQuery, state: FSMContext):
 💡 <i>مثال: پرمسو، بیمه، بانک، سیم‌کارت</i>
 
 ❌ لغو: /cancel"""
+        cancel_txt = "❌ لغو"
     
     await safe_edit_text(
         callback.message,
         text=text,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="❌ لغو", callback_data="guide:main")]
+            [InlineKeyboardButton(text=cancel_txt, callback_data="guide:main")]
         ])
     )
     
@@ -1115,32 +1812,36 @@ async def start_search(callback: CallbackQuery, state: FSMContext):
 @router.message(GuideStates.searching)
 async def process_search(message: Message, state: FSMContext):
     """پردازش جستجو"""
+    user_id = message.from_user.id
+    lang_code = get_user_lang_code(user_id)
     
     query = (message.text or "").strip()
     
-    if query.lower() in ["/cancel", "لغو"]:
+    if query.lower() in ["/cancel", "لغو", "cancel", "annulla"]:
         await state.clear()
+        cancel_msg = "❌ Search cancelled." if lang_code == "en" else ("❌ Ricerca annullata." if lang_code == "it" else "❌ جستجو لغو شد.")
         await message.answer(
-            "❌ جستجو لغو شد.",
-            reply_markup=get_back_to_guide_keyboard()
+            cancel_msg,
+            reply_markup=get_back_to_guide_keyboard(lang_code)
         )
         return
     
     if len(query) < 2:
-        await message.answer("⚠️ حداقل ۲ کاراکتر وارد کنید.")
+        warn_txt = "⚠️ Please enter at least 2 characters." if lang_code == "en" else ("⚠️ Inserisci almeno 2 caratteri." if lang_code == "it" else "⚠️ حداقل ۲ کاراکتر وارد کنید.")
+        await message.answer(warn_txt)
         return
     
     await state.clear()
     
     results = search_in_guide(query)
     
-    text = f"🔍 <b>نتایج جستجو برای:</b> <code>{query}</code>\n\n"
-    text += "━━━━━━━━━━━━━━━━━━━━━\n\n"
+    res_hdr = f"🔍 <b>Results for:</b> <code>{query}</code>\n\n" if lang_code == "en" else (f"🔍 <b>Risultati per:</b> <code>{query}</code>\n\n" if lang_code == "it" else f"🔍 <b>نتایج جستجو برای:</b> <code>{query}</code>\n\n")
+    text = res_hdr + "━━━━━━━━━━━━━━━━━━━━━\n\n"
     
     if not results:
-        text += "📭 <i>نتیجه‌ای یافت نشد.</i>\n\n"
-        text += "💡 عبارت دیگری امتحان کنید."
-        keyboard = get_back_to_guide_keyboard()
+        no_res = "📭 <i>No matching items found.</i>\n\n💡 Try another keyword." if lang_code == "en" else ("📭 <i>Nessun risultato trovato.</i>\n\n💡 Prova con un'altra parola." if lang_code == "it" else "📭 <i>نتیجه‌ای یافت نشد.</i>\n\n💡 عبارت دیگری امتحان کنید.")
+        text += no_res
+        keyboard = get_back_to_guide_keyboard(lang_code)
     else:
         buttons = []
         
@@ -1165,11 +1866,14 @@ async def process_search(message: Message, state: FSMContext):
                     )
                 ])
         
+        new_search_txt = "🔍 New Search" if lang_code == "en" else ("🔍 Nuova Ricerca" if lang_code == "it" else "🔍 جستجوی جدید")
+        guide_menu_txt = "🔙 Guide Menu" if lang_code == "en" else ("🔙 Menu Guida" if lang_code == "it" else "🔙 منوی راهنما")
+        
         buttons.append([
-            InlineKeyboardButton(text="🔍 جستجوی جدید", callback_data="guide:search")
+            InlineKeyboardButton(text=new_search_txt, callback_data="guide:search")
         ])
         buttons.append([
-            InlineKeyboardButton(text="🔙 منوی راهنما", callback_data="guide:main")
+            InlineKeyboardButton(text=guide_menu_txt, callback_data="guide:main")
         ])
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)

@@ -1,0 +1,52 @@
+# Python virtual environments
+**/.venv/
+**/venv/
+**/env/
+**/ENV/
+
+# Python cache & bytecode
+**/__pycache__/
+**/*.py[cod]
+**/*$py.class
+**/.pytest_cache/
+**/.mypy_cache/
+
+# Sensitive environment variables & secrets
+**/.env
+**/*.env
+!**/.env.example
+**/*.local
+
+# Node.js dependencies & builds
+**/node_modules/
+**/dist/
+**/dist-ssr/
+**/.next/
+**/.vercel/
+
+# Logs
+**/*.log
+**/npm-debug.log*
+**/yarn-debug.log*
+
+# Database & runtime files
+**/*.sqlite3
+**/*.db
+
+# Test uploads & media (ignore dynamically uploaded user files)
+SmartStudentBot/uploads/roommates/*
+!SmartStudentBot/uploads/roommates/.gitkeep
+SmartStudentBot/uploads/feedback/*
+!SmartStudentBot/uploads/feedback/.gitkeep
+SmartStudentBot/uploads/news/*
+!SmartStudentBot/uploads/news/.gitkeep
+
+# OS & Editor files
+**/.DS_Store
+**/Thumbs.db
+**/.idea/
+**/.vscode/
+**/*.suo
+**/*.ntvs*
+**/*.njsproj
+**/*.sln

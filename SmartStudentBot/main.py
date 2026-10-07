@@ -3,16 +3,35 @@
 # ژانویه ۲۰۲۵
 
 import os
+import sys
+import io
 import asyncio
 from contextlib import asynccontextmanager
+
+# تنظیم انکودینگ خروجی کنسول برای ویندوز
+if sys.platform.startswith("win"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 from fastapi import FastAPI, Request, HTTPException
 from aiogram import Bot, Dispatcher, types
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
 from aiogram.fsm.storage.memory import MemoryStorage
+from fastapi.middleware.cors import CORSMiddleware
 
 from config import settings, logger
+from database import db_manager
+
+# بازپیکربندی لاگورو با UTF-8 برای جلوگیری از خطاهای cp1252
+try:
+    logger.remove()
+    logger.add(sys.stdout, colorize=True, enqueue=True, backtrace=True, diagnose=True)
+except Exception:
+    pass
 
 # ─────────────────────────────────────────────────────────────────────────────
 # ساخت Bot و Dispatcher
@@ -50,6 +69,11 @@ def register_routers():
         ("handlers.isee_handler", "isee_router"),
         ("handlers.places_handler", "places_router"),
         ("handlers.italian_handler", "italian_router"),
+        ("handlers.market_handler", "market_router"),
+        ("handlers.events_handler", "events_router"),
+        ("handlers.dashboard_handler", "dashboard_router"),
+        ("handlers.cost_handler", "cost_router"),
+        ("handlers.pagopa_handler", "pagopa_router"),
     ]
     
     registered = 0
@@ -93,6 +117,9 @@ async def lifespan(app: FastAPI):
     logger.info("=" * 50)
     logger.info("🚀 SmartStudentBot Starting...")
     logger.info("=" * 50)
+    
+    # اتصال به دیتابیس MongoDB
+    await db_manager.connect()
     
     # ✅ انتقال ثبت روترها به اینجا (فقط یک بار اجرا می‌شود)
     register_routers()
@@ -148,6 +175,9 @@ async def lifespan(app: FastAPI):
     
     logger.info("🛑 Shutting down...")
     
+    # بستن اتصال دیتابیس
+    await db_manager.close()
+    
     try:
         try:
             from handlers.ai_handler import on_shutdown as ai_shutdown
@@ -181,10 +211,24 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# تنظیمات CORS برای مینی‌اپ
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # در پروداکشن به دامین Vercel محدود شود
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Endpoints
 # ─────────────────────────────────────────────────────────────────────────────
+
+try:
+    from api.webapp_api import router as webapp_router
+    app.include_router(webapp_router)
+except ImportError as e:
+    logger.error(f"Failed to import webapp_router: {e}")
 
 @app.get("/")
 async def root():
@@ -201,7 +245,8 @@ async def readiness_check():
     try:
         await bot.get_me()
         return {"status": "ready"}
-    except:
+    except Exception as e:
+        logger.error(f"Readiness check failed: {e}")
         raise HTTPException(503, "Bot not ready")
 
 
@@ -231,6 +276,41 @@ async def webhook_handler(request: Request):
     except Exception as e:
         logger.error(f"Webhook error: {e}")
         return {"ok": False}
+
+
+async def run_polling():
+    """اجرای ربات در حالت Polling برای محیط توسعه محلی"""
+    logger.info("=" * 50)
+    logger.info("🚀 SmartStudentBot Starting in POLLING mode...")
+    logger.info("=" * 50)
+    
+    # اتصال به دیتابیس
+    await db_manager.connect()
+    
+    # ثبت روترها
+    register_routers()
+    
+    # هوک استارتاپ هوش مصنوعی
+    try:
+        from handlers.ai_handler import on_startup as ai_startup
+        await ai_startup()
+    except Exception as e:
+        logger.debug(f"AI startup hook: {e}")
+        
+    try:
+        bot_info = await bot.get_me()
+        logger.success(f"🤖 Bot Polling started: @{bot_info.username}")
+        await bot.delete_webhook(drop_pending_updates=True)
+        await dp.start_polling(bot, allowed_updates=["message", "callback_query", "chat_member", "my_chat_member"])
+    finally:
+        logger.info("🛑 Polling stopped, cleaning up...")
+        try:
+            from handlers.ai_handler import on_shutdown as ai_shutdown
+            await ai_shutdown()
+        except Exception:
+            pass
+        await db_manager.close()
+        await bot.session.close()
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -3,6 +3,7 @@
 # آخرین بروزرسانی: دسامبر 2025
 
 from aiogram import Router, types, F
+from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
@@ -16,6 +17,13 @@ import asyncio
 from typing import Optional, Dict, Any, List, Tuple
 from enum import Enum
 from dataclasses import dataclass, field
+
+try:
+    from handlers.cmd_start import get_user_lang, get_text
+except ImportError:
+    def get_user_lang(user_id: int) -> dict: return {}
+    def get_text(lang: dict, key: str, default: str = "") -> str: return default
+
 
 router = Router()
 
@@ -87,9 +95,9 @@ class DeductionLimits:
     primary_home_exemption: int = 52500
     extra_per_child_after_2: int = 2500
     
-    # معافیت دارایی مالی (بر اساس تعداد اعضا)
+    # معافیت دارایی مالی (بر اساس تعداد اعضا طبق قانون رسمی DPCM 159/2013)
     financial_exemption_base: int = 6000
-    financial_exemption_per_member: int = 500
+    financial_exemption_per_member: int = 2000
     financial_exemption_max: int = 10000
     
     # حداقل درآمد برای استقلال دانشجو
@@ -215,7 +223,7 @@ class ISEEResult:
     inputs: Optional[ISEEInput] = None
 
 class ISEEDataStore:
-    """مدیریت داده‌های کاربران با پشتیبانی از persistence"""
+    """مدیریت داده‌های کاربران با پشتیبانی از persistence در MongoDB"""
     
     def __init__(self):
         self.user_data: Dict[int, Dict[str, Any]] = {}
@@ -225,7 +233,7 @@ class ISEEDataStore:
             "ttl": 300
         }
     
-    def get_user(self, user_id: int) -> Dict[str, Any]:
+    async def get_user(self, user_id: int) -> Dict[str, Any]:
         if user_id not in self.user_data:
             self.user_data[user_id] = {
                 "current": ISEEInput(),
@@ -236,16 +244,37 @@ class ISEEDataStore:
                     "show_tips": True,
                 }
             }
+            # Load from MongoDB
+            from database import db_manager
+            db_user = await db_manager.get_user(user_id)
+            if db_user and "isee" in db_user:
+                self.user_data[user_id]["history"] = db_user["isee"].get("history", [])
+                self.user_data[user_id]["settings"] = db_user["isee"].get("settings", self.user_data[user_id]["settings"])
         return self.user_data[user_id]
+        
+    async def save_user_to_db(self, user_id: int):
+        from database import db_manager
+        if user_id in self.user_data and db_manager.users is not None:
+            try:
+                await db_manager.users.update_one(
+                    {"telegram_id": user_id},
+                    {"$set": {
+                        "isee.history": self.user_data[user_id]["history"],
+                        "isee.settings": self.user_data[user_id]["settings"]
+                    }},
+                    upsert=True
+                )
+            except Exception as e:
+                logger.error(f"Error updating isee user in db: {e}")
     
-    def get_current_input(self, user_id: int) -> ISEEInput:
-        user = self.get_user(user_id)
+    async def get_current_input(self, user_id: int) -> ISEEInput:
+        user = await self.get_user(user_id)
         if not isinstance(user["current"], ISEEInput):
             user["current"] = ISEEInput()
         return user["current"]
     
-    def save_calculation(self, user_id: int, result: ISEEResult):
-        user = self.get_user(user_id)
+    async def save_calculation(self, user_id: int, result: ISEEResult):
+        user = await self.get_user(user_id)
         record = {
             "isee": result.isee,
             "status": result.status,
@@ -257,6 +286,7 @@ class ISEEDataStore:
         }
         user["history"].append(record)
         user["history"] = user["history"][-15:]  # نگهداری ۱۵ مورد آخر
+        await self.save_user_to_db(user_id)
     
     def get_cached_rate(self) -> Optional[int]:
         if self.eur_cache["rate"] and self.eur_cache["timestamp"]:
@@ -344,13 +374,13 @@ async def get_eur_rate() -> Tuple[int, bool]:
         logger.debug(f"EUR rate from cache: {cached}")
         return cached, True
     
-    # درخواست از API
-    for attempt in range(len(NAVASAN_API_KEYS)):
+    # درخواست از API با تایم‌اوت کوتاه و فال‌بک سریع
+    for attempt in range(min(2, len(NAVASAN_API_KEYS))):
         api_key = NAVASAN_API_KEYS[current_api_index]
         current_api_index = (current_api_index + 1) % len(NAVASAN_API_KEYS)
         
         try:
-            async with httpx.AsyncClient(timeout=8.0) as client:
+            async with httpx.AsyncClient(timeout=1.5) as client:
                 url = f"https://api.navasan.tech/latest/?api_key={api_key}"
                 response = await client.get(url)
                 
@@ -363,19 +393,11 @@ async def get_eur_rate() -> Tuple[int, bool]:
                         data_store.set_cached_rate(rate)
                         logger.info(f"EUR rate fetched successfully: {rate}")
                         return rate, True
-                else:
-                    logger.warning(f"API returned status {response.status_code}")
-                        
-        except httpx.TimeoutException:
-            logger.warning(f"API timeout on attempt {attempt + 1}")
-        except Exception as e:
-            logger.warning(f"API attempt {attempt + 1} failed: {type(e).__name__}: {e}")
-        
-        await asyncio.sleep(0.3)  # تأخیر کوتاه بین تلاش‌ها
+        except Exception:
+            pass
     
-    # Fallback نهایی
-    fallback_rate = 72000
-    logger.warning(f"All API attempts failed. Using fallback rate: {fallback_rate}")
+    # Fallback سریع
+    fallback_rate = 74000
     return fallback_rate, False
 
 
@@ -1006,28 +1028,37 @@ def get_isee_parificato_info() -> str:
 # بخش ۳.۱: هندلر اصلی شروع ISEE
 # ═══════════════════════════════════════════════════════════════════
 
+@router.message(Command("isee"))
 @router.callback_query(F.data == "isee")
-async def start_isee_calculator(callback: types.CallbackQuery, state: FSMContext):
+async def start_isee_calculator(event: types.Message | types.CallbackQuery, state: FSMContext):
     """نقطه ورود اصلی محاسبه‌گر ISEE"""
-    user_id = callback.from_user.id
+    user_id = event.from_user.id
     
     # پاکسازی داده قبلی
     data_store.clear_current(user_id)
     await state.clear()
     
     # نمایش پیام انتظار
-    wait_msg = await callback.message.edit_text(
-        "⏳ <b>در حال آماده‌سازی محاسبه‌گر...</b>\n"
-        "📡 دریافت آخرین نرخ ارز...",
-        parse_mode="HTML"
-    )
+    if isinstance(event, types.CallbackQuery):
+        await event.answer()
+        wait_msg = await event.message.edit_text(
+            "⏳ <b>در حال آماده‌سازی محاسبه‌گر...</b>\n"
+            "📡 دریافت آخرین نرخ ارز...",
+            parse_mode="HTML"
+        )
+    else:
+        wait_msg = await event.answer(
+            "⏳ <b>در حال آماده‌سازی محاسبه‌گر...</b>\n"
+            "📡 دریافت آخرین نرخ ارز...",
+            parse_mode="HTML"
+        )
     
     # دریافت نرخ ارز
     eur_rate, is_live = await get_eur_rate()
     
     # ذخیره در داده‌های کاربر
-    user = data_store.get_user(user_id)
-    user_input = data_store.get_current_input(user_id)
+    user = await data_store.get_user(user_id)
+    user_input = await data_store.get_current_input(user_id)
     user_input.eur_rate = eur_rate
     user_input.created_at = datetime.now().strftime("%Y/%m/%d %H:%M")
     
@@ -1084,6 +1115,7 @@ async def start_isee_calculator(callback: types.CallbackQuery, state: FSMContext
         ],
         [
             InlineKeyboardButton(text="🌍 ISEE Parificato", callback_data="isee_parificato"),
+            InlineKeyboardButton(text="⏰ یادآور ددلاین‌ها", callback_data="isee_deadline"),
         ],
         [
             InlineKeyboardButton(text="🔙 منوی اصلی", callback_data="main_menu"),
@@ -1102,7 +1134,7 @@ async def start_isee_calculator(callback: types.CallbackQuery, state: FSMContext
 async def select_full_mode(callback: types.CallbackQuery, state: FSMContext):
     """انتخاب حالت محاسبه کامل"""
     user_id = callback.from_user.id
-    user = data_store.get_user(user_id)
+    user = await data_store.get_user(user_id)
     user["settings"]["mode"] = "full"
     
     text = """
@@ -1156,7 +1188,7 @@ async def select_full_mode(callback: types.CallbackQuery, state: FSMContext):
 async def select_quick_mode(callback: types.CallbackQuery, state: FSMContext):
     """انتخاب حالت محاسبه سریع"""
     user_id = callback.from_user.id
-    user = data_store.get_user(user_id)
+    user = await data_store.get_user(user_id)
     user["settings"]["mode"] = "quick"
     
     text = """
@@ -1210,8 +1242,8 @@ async def select_quick_mode(callback: types.CallbackQuery, state: FSMContext):
 async def select_region(callback: types.CallbackQuery, state: FSMContext):
     """انتخاب منطقه و شروع سؤالات"""
     user_id = callback.from_user.id
-    user_input = data_store.get_current_input(user_id)
-    user = data_store.get_user(user_id)
+    user_input = await data_store.get_current_input(user_id)
+    user = await data_store.get_user(user_id)
     
     # تعیین منطقه
     region_code = callback.data.replace("isee_region_", "")
@@ -1287,8 +1319,8 @@ async def begin_questions(callback: types.CallbackQuery, state: FSMContext):
 async def quick_start(callback: types.CallbackQuery, state: FSMContext):
     """شروع سریع (بدون انتخاب منطقه - پیش‌فرض)"""
     user_id = callback.from_user.id
-    user = data_store.get_user(user_id)
-    user_input = data_store.get_current_input(user_id)
+    user = await data_store.get_user(user_id)
+    user_input = await data_store.get_current_input(user_id)
     
     # تنظیمات پیش‌فرض
     user_input.region = Region.CENTRO
@@ -1306,7 +1338,7 @@ async def quick_start(callback: types.CallbackQuery, state: FSMContext):
 async def show_history(callback: types.CallbackQuery):
     """نمایش تاریخچه محاسبات"""
     user_id = callback.from_user.id
-    user = data_store.get_user(user_id)
+    user = await data_store.get_user(user_id)
     history = user.get("history", [])
     
     if not history:
@@ -1598,7 +1630,7 @@ async def reverse_calculator_intro(callback: types.CallbackQuery, state: FSMCont
 """
     
     user_id = callback.from_user.id
-    user = data_store.get_user(user_id)
+    user = await data_store.get_user(user_id)
     history = user.get("history", [])
     
     if history:
@@ -1681,8 +1713,8 @@ async def whatif_intro(callback: types.CallbackQuery):
 async def ask_income(message: types.Message, state: FSMContext, user_id: int):
     """مرحله اول: سؤال درآمد سالانه خانواده"""
     
-    user = data_store.get_user(user_id)
-    user_input = data_store.get_current_input(user_id)
+    user = await data_store.get_user(user_id)
+    user_input = await data_store.get_current_input(user_id)
     eur_rate = user_input.eur_rate
     mode = user.get("settings", {}).get("mode", "full")
     
@@ -1743,8 +1775,8 @@ async def process_income(message: types.Message, state: FSMContext):
     """پردازش درآمد وارد شده"""
     
     user_id = message.from_user.id
-    user = data_store.get_user(user_id)
-    user_input = data_store.get_current_input(user_id)
+    user = await data_store.get_user(user_id)
+    user_input = await data_store.get_current_input(user_id)
     eur_rate = user_input.eur_rate
     
     raw_text = message.text.strip()
@@ -1879,7 +1911,7 @@ async def process_income(message: types.Message, state: FSMContext):
 async def ask_tenant_status(message: types.Message, state: FSMContext, user_id: int):
     """سؤال آیا خانواده مستأجر است؟"""
     
-    user = data_store.get_user(user_id)
+    user = await data_store.get_user(user_id)
     mode = user.get("settings", {}).get("mode", "full")
     total = TOTAL_STEPS if mode == "full" else QUICK_MODE_STEPS
     
@@ -1927,7 +1959,7 @@ async def tenant_yes(callback: types.CallbackQuery, state: FSMContext):
     """کاربر مستأجر است - سؤال مبلغ اجاره"""
     
     user_id = callback.from_user.id
-    user_input = data_store.get_current_input(user_id)
+    user_input = await data_store.get_current_input(user_id)
     user_input.is_tenant = True
     
     eur_rate = user_input.eur_rate
@@ -1976,7 +2008,7 @@ async def tenant_no(callback: types.CallbackQuery, state: FSMContext):
     """کاربر مالک است - رفتن به مرحله بعد"""
     
     user_id = callback.from_user.id
-    user_input = data_store.get_current_input(user_id)
+    user_input = await data_store.get_current_input(user_id)
     user_input.is_tenant = False
     user_input.annual_rent = 0
     
@@ -2001,8 +2033,8 @@ async def process_rent(message: types.Message, state: FSMContext):
     """پردازش مبلغ اجاره سالانه"""
     
     user_id = message.from_user.id
-    user = data_store.get_user(user_id)
-    user_input = data_store.get_current_input(user_id)
+    user = await data_store.get_user(user_id)
+    user_input = await data_store.get_current_input(user_id)
     eur_rate = user_input.eur_rate
     
     raw_text = message.text.strip()
@@ -2073,7 +2105,7 @@ async def back_to_income(callback: types.CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
     
     # پاک کردن مقدار قبلی درآمد
-    user_input = data_store.get_current_input(user_id)
+    user_input = await data_store.get_current_input(user_id)
     user_input.income = 0.0
     
     await callback.message.delete()
@@ -2087,7 +2119,7 @@ async def back_to_income(callback: types.CallbackQuery, state: FSMContext):
 async def ask_members(message: types.Message, state: FSMContext, user_id: int):
     """مرحله سوم: تعداد اعضای خانواده"""
     
-    user = data_store.get_user(user_id)
+    user = await data_store.get_user(user_id)
     mode = user.get("settings", {}).get("mode", "full")
     total = TOTAL_STEPS if mode == "full" else QUICK_MODE_STEPS
     
@@ -2155,8 +2187,8 @@ async def process_members(message: types.Message, state: FSMContext):
     """پردازش تعداد اعضای خانواده"""
     
     user_id = message.from_user.id
-    user = data_store.get_user(user_id)
-    user_input = data_store.get_current_input(user_id)
+    user = await data_store.get_user(user_id)
+    user_input = await data_store.get_current_input(user_id)
     
     raw_text = message.text.strip()
     
@@ -2232,7 +2264,7 @@ async def process_members(message: types.Message, state: FSMContext):
 async def ask_children_count(message: types.Message, state: FSMContext, user_id: int):
     """سؤال تعداد فرزندان برای معافیت اضافی خانه"""
     
-    user_input = data_store.get_current_input(user_id)
+    user_input = await data_store.get_current_input(user_id)
     members = user_input.members
     
     # اگر ۲ نفر یا کمتر هستند، فرزندی وجود ندارد
@@ -2286,7 +2318,7 @@ async def process_children(message: types.Message, state: FSMContext):
     """پردازش تعداد فرزندان"""
     
     user_id = message.from_user.id
-    user_input = data_store.get_current_input(user_id)
+    user_input = await data_store.get_current_input(user_id)
     
     raw_text = normalize_persian_text(message.text.strip())
     
@@ -2336,8 +2368,8 @@ async def process_children(message: types.Message, state: FSMContext):
 async def ask_total_assets_quick(message: types.Message, state: FSMContext, user_id: int):
     """سؤال دارایی کل در حالت سریع"""
     
-    user = data_store.get_user(user_id)
-    user_input = data_store.get_current_input(user_id)
+    user = await data_store.get_user(user_id)
+    user_input = await data_store.get_current_input(user_id)
     eur_rate = user_input.eur_rate
     
     progress = generate_progress_bar(3, QUICK_MODE_STEPS)
@@ -2395,8 +2427,8 @@ async def ask_total_assets_quick(message: types.Message, state: FSMContext, user
 async def ask_property(message: types.Message, state: FSMContext, user_id: int):
     """مرحله چهارم: ارزش املاک و مستغلات"""
     
-    user = data_store.get_user(user_id)
-    user_input = data_store.get_current_input(user_id)
+    user = await data_store.get_user(user_id)
+    user_input = await data_store.get_current_input(user_id)
     eur_rate = user_input.eur_rate
     mode = user.get("settings", {}).get("mode", "full")
     total = TOTAL_STEPS if mode == "full" else QUICK_MODE_STEPS
@@ -2473,8 +2505,8 @@ async def process_property(message: types.Message, state: FSMContext):
     """پردازش ارزش املاک"""
     
     user_id = message.from_user.id
-    user = data_store.get_user(user_id)
-    user_input = data_store.get_current_input(user_id)
+    user = await data_store.get_user(user_id)
+    user_input = await data_store.get_current_input(user_id)
     eur_rate = user_input.eur_rate
     
     raw_text = message.text.strip()
@@ -2562,7 +2594,7 @@ async def process_property(message: types.Message, state: FSMContext):
 async def ask_primary_home(message: types.Message, state: FSMContext, user_id: int):
     """سؤال آیا ملک وارد شده خانه اصلی است؟"""
     
-    user_input = data_store.get_current_input(user_id)
+    user_input = await data_store.get_current_input(user_id)
     
     # محاسبه معافیت
     base_exemption = DEDUCTION_LIMITS.primary_home_exemption
@@ -2610,7 +2642,7 @@ async def primary_home_yes(callback: types.CallbackQuery, state: FSMContext):
     """خانه اصلی هست"""
     
     user_id = callback.from_user.id
-    user_input = data_store.get_current_input(user_id)
+    user_input = await data_store.get_current_input(user_id)
     user_input.is_primary_home = True
     
     # محاسبه معافیت واقعی
@@ -2640,7 +2672,7 @@ async def primary_home_no(callback: types.CallbackQuery, state: FSMContext):
     """خانه اصلی نیست"""
     
     user_id = callback.from_user.id
-    user_input = data_store.get_current_input(user_id)
+    user_input = await data_store.get_current_input(user_id)
     user_input.is_primary_home = False
     
     await callback.message.edit_text(
@@ -2664,7 +2696,7 @@ async def back_to_members(callback: types.CallbackQuery, state: FSMContext):
     """بازگشت به مرحله اعضا"""
     
     user_id = callback.from_user.id
-    user_input = data_store.get_current_input(user_id)
+    user_input = await data_store.get_current_input(user_id)
     
     # پاک کردن مقادیر
     user_input.property_value = 0
@@ -2681,8 +2713,8 @@ async def back_to_members(callback: types.CallbackQuery, state: FSMContext):
 async def ask_financial(message: types.Message, state: FSMContext, user_id: int):
     """مرحله پنجم: دارایی‌های مالی"""
     
-    user = data_store.get_user(user_id)
-    user_input = data_store.get_current_input(user_id)
+    user = await data_store.get_user(user_id)
+    user_input = await data_store.get_current_input(user_id)
     eur_rate = user_input.eur_rate
     
     progress = generate_progress_bar(5, TOTAL_STEPS)
@@ -2751,8 +2783,8 @@ async def process_financial(message: types.Message, state: FSMContext):
     """پردازش دارایی مالی"""
     
     user_id = message.from_user.id
-    user = data_store.get_user(user_id)
-    user_input = data_store.get_current_input(user_id)
+    user = await data_store.get_user(user_id)
+    user_input = await data_store.get_current_input(user_id)
     eur_rate = user_input.eur_rate
     
     raw_text = message.text.strip()
@@ -2818,7 +2850,7 @@ async def process_financial(message: types.Message, state: FSMContext):
 async def ask_debts(message: types.Message, state: FSMContext, user_id: int):
     """مرحله ششم: بدهی‌ها و وام‌ها"""
     
-    user_input = data_store.get_current_input(user_id)
+    user_input = await data_store.get_current_input(user_id)
     eur_rate = user_input.eur_rate
     
     progress = generate_progress_bar(6, TOTAL_STEPS)
@@ -2883,8 +2915,8 @@ async def process_debts(message: types.Message, state: FSMContext):
     """پردازش بدهی‌ها"""
     
     user_id = message.from_user.id
-    user = data_store.get_user(user_id)
-    user_input = data_store.get_current_input(user_id)
+    user = await data_store.get_user(user_id)
+    user_input = await data_store.get_current_input(user_id)
     eur_rate = user_input.eur_rate
     
     raw_text = message.text.strip()
@@ -2958,7 +2990,7 @@ async def process_debts(message: types.Message, state: FSMContext):
 async def ask_abroad(message: types.Message, state: FSMContext, user_id: int):
     """مرحله هفتم: دارایی خارج از ایران"""
     
-    user_input = data_store.get_current_input(user_id)
+    user_input = await data_store.get_current_input(user_id)
     
     progress = generate_progress_bar(7, TOTAL_STEPS)
     
@@ -3012,8 +3044,8 @@ async def process_abroad(message: types.Message, state: FSMContext):
     """پردازش دارایی خارجی"""
     
     user_id = message.from_user.id
-    user = data_store.get_user(user_id)
-    user_input = data_store.get_current_input(user_id)
+    user = await data_store.get_user(user_id)
+    user_input = await data_store.get_current_input(user_id)
     eur_rate = user_input.eur_rate
     
     raw_text = message.text.strip()
@@ -3070,7 +3102,7 @@ async def process_abroad(message: types.Message, state: FSMContext):
 async def ask_independent_status(message: types.Message, state: FSMContext, user_id: int):
     """مرحله هشتم: وضعیت استقلال دانشجو"""
     
-    user_input = data_store.get_current_input(user_id)
+    user_input = await data_store.get_current_input(user_id)
     
     progress = generate_progress_bar(8, TOTAL_STEPS)
     
@@ -3130,7 +3162,7 @@ async def independent_yes(callback: types.CallbackQuery, state: FSMContext):
     """دانشجو مستقل است"""
     
     user_id = callback.from_user.id
-    user_input = data_store.get_current_input(user_id)
+    user_input = await data_store.get_current_input(user_id)
     user_input.is_independent_student = True
     
     await callback.message.edit_text(
@@ -3149,7 +3181,7 @@ async def independent_no(callback: types.CallbackQuery, state: FSMContext):
     """دانشجو مستقل نیست"""
     
     user_id = callback.from_user.id
-    user_input = data_store.get_current_input(user_id)
+    user_input = await data_store.get_current_input(user_id)
     user_input.is_independent_student = False
     
     await callback.message.edit_text(
@@ -3211,7 +3243,7 @@ async def back_to_abroad(callback: types.CallbackQuery, state: FSMContext):
     """بازگشت به مرحله دارایی خارجی"""
     
     user_id = callback.from_user.id
-    user_input = data_store.get_current_input(user_id)
+    user_input = await data_store.get_current_input(user_id)
     user_input.abroad_assets = 0
     
     await callback.message.delete()
@@ -3226,8 +3258,8 @@ async def back_to_abroad(callback: types.CallbackQuery, state: FSMContext):
 async def show_confirm_page(message: types.Message, state: FSMContext, user_id: int):
     """نمایش صفحه تأیید و پیش‌نمایش داده‌ها قبل از محاسبه"""
     
-    user = data_store.get_user(user_id)
-    user_input = data_store.get_current_input(user_id)
+    user = await data_store.get_user(user_id)
+    user_input = await data_store.get_current_input(user_id)
     display_values = user.get("display_values", {})
     
     # محاسبه پیش‌نمایش
@@ -3351,7 +3383,7 @@ async def show_confirm_page(message: types.Message, state: FSMContext, user_id: 
 async def edit_income(callback: types.CallbackQuery, state: FSMContext):
     """ویرایش درآمد"""
     user_id = callback.from_user.id
-    user = data_store.get_user(user_id)
+    user = await data_store.get_user(user_id)
     user["_editing_field"] = "income"
     
     await callback.message.delete()
@@ -3384,7 +3416,7 @@ async def edit_income(callback: types.CallbackQuery, state: FSMContext):
 async def edit_members(callback: types.CallbackQuery, state: FSMContext):
     """ویرایش تعداد اعضا"""
     user_id = callback.from_user.id
-    user = data_store.get_user(user_id)
+    user = await data_store.get_user(user_id)
     user["_editing_field"] = "members"
     
     await callback.message.delete()
@@ -3415,7 +3447,7 @@ async def edit_members(callback: types.CallbackQuery, state: FSMContext):
 async def edit_property(callback: types.CallbackQuery, state: FSMContext):
     """ویرایش ارزش املاک"""
     user_id = callback.from_user.id
-    user = data_store.get_user(user_id)
+    user = await data_store.get_user(user_id)
     user["_editing_field"] = "property"
     
     await callback.message.delete()
@@ -3448,7 +3480,7 @@ async def edit_property(callback: types.CallbackQuery, state: FSMContext):
 async def edit_financial(callback: types.CallbackQuery, state: FSMContext):
     """ویرایش دارایی مالی"""
     user_id = callback.from_user.id
-    user = data_store.get_user(user_id)
+    user = await data_store.get_user(user_id)
     user["_editing_field"] = "financial"
     
     await callback.message.delete()
@@ -3481,7 +3513,7 @@ async def edit_financial(callback: types.CallbackQuery, state: FSMContext):
 async def edit_debts(callback: types.CallbackQuery, state: FSMContext):
     """ویرایش بدهی‌ها"""
     user_id = callback.from_user.id
-    user = data_store.get_user(user_id)
+    user = await data_store.get_user(user_id)
     user["_editing_field"] = "debts"
     
     await callback.message.delete()
@@ -3514,7 +3546,7 @@ async def edit_debts(callback: types.CallbackQuery, state: FSMContext):
 async def edit_abroad(callback: types.CallbackQuery, state: FSMContext):
     """ویرایش دارایی خارجی"""
     user_id = callback.from_user.id
-    user = data_store.get_user(user_id)
+    user = await data_store.get_user(user_id)
     user["_editing_field"] = "abroad"
     
     await callback.message.delete()
@@ -3552,8 +3584,8 @@ async def process_edit_field(message: types.Message, state: FSMContext):
     """پردازش مقدار ویرایش شده"""
     
     user_id = message.from_user.id
-    user = data_store.get_user(user_id)
-    user_input = data_store.get_current_input(user_id)
+    user = await data_store.get_user(user_id)
+    user_input = await data_store.get_current_input(user_id)
     eur_rate = user_input.eur_rate
     
     raw_text = message.text.strip()
@@ -3684,8 +3716,8 @@ async def confirm_and_calculate(callback: types.CallbackQuery, state: FSMContext
 async def calculate_and_show_result(message: types.Message, state: FSMContext, user_id: int):
     """محاسبه نهایی و نمایش نتیجه کامل"""
     
-    user = data_store.get_user(user_id)
-    user_input = data_store.get_current_input(user_id)
+    user = await data_store.get_user(user_id)
+    user_input = await data_store.get_current_input(user_id)
     
     # دریافت آستانه‌های منطقه
     thresholds = REGIONAL_THRESHOLDS.get(user_input.region, DEFAULT_THRESHOLDS)
@@ -3694,7 +3726,7 @@ async def calculate_and_show_result(message: types.Message, state: FSMContext, u
     result = calculate_isee(user_input, thresholds)
     
     # ذخیره در تاریخچه
-    data_store.save_calculation(user_id, result)
+    await data_store.save_calculation(user_id, result)
     
     # ارسال گزارش نهایی
     await send_final_report(message, result, user_input, user, thresholds)
@@ -3873,6 +3905,9 @@ ISEE رسمی توسط CAF در ایتالیا صادر می‌شود.</i>
     # ساخت کیبورد
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [
+            InlineKeyboardButton(text="📄 دریافت کارنامه رسمی PDF", callback_data="isee_get_pdf"),
+        ],
+        [
             InlineKeyboardButton(text="🔄 محاسبه مجدد", callback_data="isee_mode_full"),
             InlineKeyboardButton(text="💡 راهکار کاهش", callback_data="isee_tips"),
         ],
@@ -3893,12 +3928,72 @@ ISEE رسمی توسط CAF در ایتالیا صادر می‌شود.</i>
         ]
     ])
     
-    # ارسال گزارش
+    # ارسال گزارش به کاربر
     try:
         await message.edit_text(report, reply_markup=keyboard, parse_mode="HTML")
     except:
         # اگر edit نشد، پیام جدید بفرست
         await message.answer(report, reply_markup=keyboard, parse_mode="HTML")
+
+    # ═══ ارسال اعلان برای ادمین‌ها ═══
+    try:
+        user_name = user.get("name") or (message.from_user.first_name if message.from_user else "کاربر")
+        username = user.get("username") or (message.from_user.username if message.from_user else "")
+        uid = user.get("id") or message.chat.id
+        user_link = f"@{username}" if username else f"<a href='tg://user?id={uid}'>{user_name}</a>"
+        
+        admin_alert = (
+            f"📊 <b>گزارش جدید محاسبه ISEE</b>\n"
+            f"{'━' * 26}\n"
+            f"👤 <b>دانشجو:</b> {user_link} (<code>{uid}</code>)\n"
+            f"🎯 <b>مقدار ISEE:</b> <code>{isee:,.2f} €</code>\n"
+            f"🏆 <b>وضعیت:</b> {config['emoji']} <b>{config['title']}</b>\n"
+            f"📍 <b>منطقه:</b> {inputs.region}\n"
+            f"👥 <b>تعداد اعضا:</b> {inputs.members} نفر\n"
+            f"💰 <b>درآمد سالانه:</b> {inputs.income:,.0f} €\n"
+            f"🏠 <b>ارزش املاک:</b> {inputs.property_value:,.0f} €\n"
+            f"💳 <b>دارایی‌های مالی:</b> {inputs.financial_assets:,.0f} €\n"
+            f"📅 <b>زمان:</b> {datetime.now().strftime('%Y/%m/%d %H:%M')}"
+        )
+        admin_kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="💬 پیام مستقیم به دانشجو", url=f"tg://user?id={uid}")]
+        ])
+        for admin_id in settings.ADMIN_CHAT_IDS:
+            try:
+                await message.bot.send_message(admin_id, admin_alert, reply_markup=admin_kb, parse_mode="HTML")
+            except Exception as e:
+                logger.warning(f"Could not send ISEE alert to admin {admin_id}: {e}")
+    except Exception as e:
+        logger.error(f"Error preparing admin ISEE alert: {e}")
+
+
+@router.callback_query(F.data == "isee_get_pdf")
+async def handle_isee_pdf_download(callback: types.CallbackQuery):
+    """تولید و ارسال کارنامه شبیه‌ساز رسمی ISEE در قالب PDF"""
+    user_id = callback.from_user.id
+    user = await data_store.get_user(user_id)
+    history = user.get("history", [])
+    
+    await callback.answer("⏳ در حال تولید کارنامه رسمی PDF...")
+    try:
+        from services.pdf_report import generate_isee_pdf
+        user_input = await data_store.get_current_input(user_id)
+        thresholds = REGIONAL_THRESHOLDS.get(user_input.region, DEFAULT_THRESHOLDS)
+        result = calculate_isee(user_input, thresholds)
+        name = callback.from_user.full_name or "Studente"
+        
+        pdf_buffer = generate_isee_pdf(result, user_input, user_name=name)
+        pdf_file = types.BufferedInputFile(pdf_buffer.read(), filename=f"ISEE_Parificato_{user_id}.pdf")
+        
+        await callback.message.answer_document(
+            pdf_file,
+            caption="📄 <b>کارنامه رسمی شبیه‌سازی ISEE Parificato (ADiSU Umbria)</b>\n\n"
+                    "✅ این گزارش شامل ریز محاسبات، وضعیت معافیت‌ها و استانداردهای بورس دانشگاه پروجاست.",
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        logger.error(f"Error generating ISEE PDF: {e}")
+        await callback.message.answer(f"⚠️ متاسفانه در تولید فایل PDF خطایی رخ داد: {e}")
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -3956,7 +4051,7 @@ async def handle_reverse_calculator(callback: types.CallbackQuery, state: FSMCon
     
     action = callback.data.replace("isee_reverse_", "")
     user_id = callback.from_user.id
-    user = data_store.get_user(user_id)
+    user = await data_store.get_user(user_id)
     history = user.get("history", [])
     
     # اگر intro است، در بخش ۳ هندل شده
@@ -4099,7 +4194,7 @@ async def process_reverse_target(message: types.Message, state: FSMContext):
     """پردازش هدف ISEE در محاسبه‌گر معکوس"""
     
     user_id = message.from_user.id
-    user = data_store.get_user(user_id)
+    user = await data_store.get_user(user_id)
     history = user.get("history", [])
     
     raw_text = message.text.strip()
@@ -4228,7 +4323,7 @@ async def start_whatif(callback: types.CallbackQuery, state: FSMContext):
     """شروع سناریوی What-If"""
     
     user_id = callback.from_user.id
-    user = data_store.get_user(user_id)
+    user = await data_store.get_user(user_id)
     history = user.get("history", [])
     
     if not history:
@@ -4287,7 +4382,7 @@ async def process_whatif_scenario(callback: types.CallbackQuery, state: FSMConte
         return
     
     user_id = callback.from_user.id
-    user = data_store.get_user(user_id)
+    user = await data_store.get_user(user_id)
     history = user.get("history", [])
     
     if not history:
@@ -4611,7 +4706,7 @@ async def export_pdf(callback: types.CallbackQuery):
     """صادر کردن گزارش PDF"""
     
     user_id = callback.from_user.id
-    user = data_store.get_user(user_id)
+    user = await data_store.get_user(user_id)
     history = user.get("history", [])
     
     if not history:
@@ -4827,7 +4922,7 @@ async def confirm_reminder(callback: types.CallbackQuery):
     
     # در نسخه واقعی باید در دیتابیس ذخیره شود
     user_id = callback.from_user.id
-    user = data_store.get_user(user_id)
+    user = await data_store.get_user(user_id)
     
     if "reminders" not in user:
         user["reminders"] = []
@@ -4881,7 +4976,7 @@ async def redirect_to_consultation(callback: types.CallbackQuery):
     """هدایت به ماژول مشاوره"""
     
     user_id = callback.from_user.id
-    user = data_store.get_user(user_id)
+    user = await data_store.get_user(user_id)
     history = user.get("history", [])
     
     isee_info = ""
@@ -5041,7 +5136,7 @@ async def compare_universities(callback: types.CallbackQuery):
     """مقایسه شانس بورسیه در دانشگاه‌های مختلف"""
     
     user_id = callback.from_user.id
-    user = data_store.get_user(user_id)
+    user = await data_store.get_user(user_id)
     history = user.get("history", [])
     
     if not history:
@@ -5114,7 +5209,7 @@ async def show_settings(callback: types.CallbackQuery):
     """نمایش تنظیمات کاربر"""
     
     user_id = callback.from_user.id
-    user = data_store.get_user(user_id)
+    user = await data_store.get_user(user_id)
     settings = user.get("settings", {})
     
     # مقادیر فعلی
@@ -5184,7 +5279,7 @@ async def show_settings(callback: types.CallbackQuery):
 async def toggle_currency(callback: types.CallbackQuery):
     """تغییر واحد پول"""
     user_id = callback.from_user.id
-    user = data_store.get_user(user_id)
+    user = await data_store.get_user(user_id)
     
     current = user.get("settings", {}).get("preferred_currency", "toman")
     new_currency = "euro" if current == "toman" else "toman"
@@ -5198,7 +5293,7 @@ async def toggle_currency(callback: types.CallbackQuery):
 async def toggle_tips(callback: types.CallbackQuery):
     """تغییر نمایش نکات"""
     user_id = callback.from_user.id
-    user = data_store.get_user(user_id)
+    user = await data_store.get_user(user_id)
     
     current = user.get("settings", {}).get("show_tips", True)
     user["settings"]["show_tips"] = not current
@@ -5237,7 +5332,7 @@ async def clear_history_confirm(callback: types.CallbackQuery):
 async def clear_history_execute(callback: types.CallbackQuery):
     """اجرای پاک کردن تاریخچه"""
     user_id = callback.from_user.id
-    user = data_store.get_user(user_id)
+    user = await data_store.get_user(user_id)
     
     user["history"] = []
     
@@ -5465,6 +5560,7 @@ ISEE (Indicatore della Situazione Economica Equivalente)
         ],
         [
             InlineKeyboardButton(text="🌍 ISEE Parificato", callback_data="isee_parificato"),
+            InlineKeyboardButton(text="⏰ یادآور ددلاین‌ها", callback_data="isee_deadline"),
         ],
         [
             InlineKeyboardButton(text="🔙 بازگشت", callback_data="isee"),
@@ -5538,7 +5634,7 @@ async def show_faq(callback: types.CallbackQuery):
 async def get_user_isee_summary(user_id: int) -> Optional[dict]:
     """دریافت خلاصه وضعیت ISEE کاربر برای استفاده در سایر ماژول‌ها"""
     
-    user = data_store.get_user(user_id)
+    user = await data_store.get_user(user_id)
     history = user.get("history", [])
     
     if not history:
@@ -5558,7 +5654,7 @@ async def get_user_isee_summary(user_id: int) -> Optional[dict]:
 async def check_scholarship_eligibility(user_id: int, university_region: Region = Region.CENTRO) -> dict:
     """بررسی واجد شرایط بودن برای بورسیه - برای استفاده در سایر ماژول‌ها"""
     
-    user = data_store.get_user(user_id)
+    user = await data_store.get_user(user_id)
     history = user.get("history", [])
     
     if not history:
@@ -5601,10 +5697,10 @@ async def check_scholarship_eligibility(user_id: int, university_region: Region 
         }
 
 
-def export_user_data(user_id: int) -> dict:
+async def export_user_data(user_id: int) -> dict:
     """صادر کردن تمام داده‌های کاربر - برای بکاپ یا انتقال"""
     
-    user = data_store.get_user(user_id)
+    user = await data_store.get_user(user_id)
     
     return {
         "user_id": user_id,
@@ -5615,11 +5711,11 @@ def export_user_data(user_id: int) -> dict:
     }
 
 
-def import_user_data(user_id: int, data: dict) -> bool:
+async def import_user_data(user_id: int, data: dict) -> bool:
     """وارد کردن داده‌های کاربر از بکاپ"""
     
     try:
-        user = data_store.get_user(user_id)
+        user = await data_store.get_user(user_id)
         
         if "history" in data:
             user["history"] = data["history"]
@@ -5638,10 +5734,10 @@ def import_user_data(user_id: int, data: dict) -> bool:
 # بخش ۸.۵: آپدیت کیبورد منوی اصلی ISEE
 # ═══════════════════════════════════════════════════════════════════
 
-def build_isee_main_menu(user_id: int) -> InlineKeyboardMarkup:
+async def build_isee_main_menu(user_id: int) -> InlineKeyboardMarkup:
     """ساخت کیبورد منوی اصلی ISEE با توجه به وضعیت کاربر"""
     
-    user = data_store.get_user(user_id)
+    user = await data_store.get_user(user_id)
     history = user.get("history", [])
     
     buttons = [
@@ -6101,3 +6197,27 @@ if __name__ == "__main__":
     import asyncio
     asyncio.run(main())
 """
+
+@router.callback_query(F.data == "isee_deadline")
+async def show_isee_deadline(callback: types.CallbackQuery):
+    """نمایش ددلاین‌های ISEE"""
+    user_id = callback.from_user.id
+    lang = get_user_lang(user_id)
+    
+    def t(k, d): return get_text(lang, k, d)
+    
+    text = t("isee_deadline_title", "⏰ <b>یادآور ددلاین‌های مهم ISEE و بورسیه</b>") + "\n\n"
+    text += t("isee_deadline_desc", "📅 در اینجا تاریخ‌های کلیدی و مهلت‌های مهم مربوط به ارائه ISEE و مدارک بورسیه را مشاهده می‌کنید:") + "\n\n"
+    text += "━━━━━━━━━━━━━━━━━━━━━\n\n"
+    text += t("isee_deadline_1", "🔹 <b>ارائه ISEE Parificato:</b> تا پایان سپتامبر") + "\n\n"
+    text += t("isee_deadline_2", "🔹 <b>درخواست خوابگاه:</b> اواسط آگوست") + "\n\n"
+    text += t("isee_deadline_3", "🔹 <b>تکمیل پرونده ADISU:</b> اوایل سپتامبر") + "\n\n"
+    text += "━━━━━━━━━━━━━━━━━━━━━\n\n"
+    text += t("isee_deadline_warn", "⚠️ حتماً قبل از این تاریخ‌ها به CAF مراجعه کنید تا تاخیری در پردازش پرونده پیش نیاید.")
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=t("back", "🔙 بازگشت"), callback_data="isee")]
+    ])
+    
+    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+    await callback.answer()

@@ -1,0 +1,21 @@
+@import "tailwindcss";
+
+@theme {
+  --color-perugia-red: #c1121f;
+  --color-perugia-gold: #fdf0d5;
+  --color-neon-cyan: #00ffff;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: #050505;
+  overflow-x: hidden;
+}
+
+.glass-panel {
+  background: rgba(20, 20, 20, 0.6);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
+}

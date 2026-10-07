@@ -24,8 +24,10 @@ from contextlib import suppress
 
 from aiogram import Router, F, types
 from aiogram.filters import CommandStart, Command
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message, CallbackQuery
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message, CallbackQuery, WebAppInfo
 from aiogram.exceptions import TelegramBadRequest
+
+from config import settings
 
 # تنظیمات لاگر
 logger = logging.getLogger(__name__)
@@ -204,45 +206,59 @@ def get_language_keyboard() -> InlineKeyboardMarkup:
 
 def get_main_menu(lang: dict) -> InlineKeyboardMarkup:
     """
-    منوی اصلی کامل
-    شامل تمام دکمه‌های ناوبری به بخش‌های مختلف
+    منوی اصلی کامل با ساختاربندی و اولویت‌بندی استاندارد بر اساس نیاز دانشجو
     """
-    # تابع داخلی برای کوتاه کردن کد
     def t(key, default): return get_text(lang, key, default)
 
     buttons = [
-        # ردیف ۱: خدمات پرکاربرد (اخبار و هواشناسی)
+        # ردیف طلایی: مینی‌اپلیکیشن تلگرام (Telegram Mini App)
         [
-            InlineKeyboardButton(text=t("news", "📰 اخبار دانشگاه"), callback_data="news"),
-            InlineKeyboardButton(text=t("weather", "🌤 آب‌وهوا"), callback_data="weather"),
+            InlineKeyboardButton(
+                text=t("webapp_btn", "🌟 ورود به مینی‌اپلیکیشن پروجا (Mini App) 🚀"),
+                web_app=WebAppInfo(url=settings.WEBAPP_URL) if settings.WEBAPP_URL else None,
+                callback_data="open_webapp" if not settings.WEBAPP_URL else None
+            ),
         ],
-        # ردیف ۲: خدمات اداری (راهنما و ISEE)
+        # ردیف ۱: مهم‌ترین خدمات پذیرش و بورسیه (اولویت اول دانشجو)
         [
-            InlineKeyboardButton(text=t("guide", "📖 راهنمای زندگی"), callback_data="guide_main"),
             InlineKeyboardButton(text=t("isee", "🧮 محاسبه ISEE"), callback_data="isee"),
+            InlineKeyboardButton(text=t("consult", "💬 مشاوره تحصیلی"), callback_data="consult"),
         ],
-        # ردیف ۳: خدمات شهری و مشاوره
+        # ردیف ۲: مسکن و هزینه‌های زندگی
         [
-            InlineKeyboardButton(text=t("places", "📍 مکان‌های مهم"), callback_data="places"),
-            InlineKeyboardButton(text=t("consult", "💬 مشاوره"), callback_data="consult"),
+            InlineKeyboardButton(text=t("roommate", "🏠 هم‌خانه‌یابی و مسکن"), callback_data="roommate"),
+            InlineKeyboardButton(text=t("costs", "💰 برآورد مخارج پروجا"), callback_data="cost_main"),
         ],
-        # ردیف ۴: خدمات دانشجویی (هم‌خانه و ایتالیایی)
+        # ردیف ۳: راهنما و مکان‌های شهری
         [
-            InlineKeyboardButton(text=t("roommate", "🏠 هم‌خانه‌یابی"), callback_data="roommate"),
+            InlineKeyboardButton(text=t("places", "📍 مکان‌های مهم پروجا"), callback_data="places"),
+            InlineKeyboardButton(text=t("guide", "📖 راهنمای زندگی و تحصیل"), callback_data="guide_main"),
+        ],
+        # ردیف ۴: خدمات دانشجویی (بازارچه و آموزش ایتالیایی)
+        [
+            InlineKeyboardButton(text=t("market", "🛒 بازارچه دست‌دوم"), callback_data="market"),
             InlineKeyboardButton(text=t("italy", "🇮🇹 یادگیری ایتالیایی"), callback_data="italy"),
         ],
-        # ردیف ۵: هوش مصنوعی و ترجمه (اتصال به AI Handler)
+        # ردیف ۵: اخبار و آب‌وهوا
         [
-            InlineKeyboardButton(text=t("ai_chat", "🤖 دستیار هوشمند"), callback_data="ai_chat"),
+            InlineKeyboardButton(text=t("weather", "🌤 آب‌وهوای پروجا"), callback_data="weather"),
+            InlineKeyboardButton(text=t("news", "📰 اخبار دانشگاه UniPG"), callback_data="news"),
         ],
+        # ردیف ۶: هوش مصنوعی و ترجمه
         [
-            InlineKeyboardButton(text=t("translate", "🌐 ترجمه متن"), callback_data="ai:translate_menu"),
-            InlineKeyboardButton(text=t("feedback", "📝 پشتیبانی"), callback_data="feedback"), # موقت به فیدبک AI وصل شده
+            InlineKeyboardButton(text=t("ai_chat", "🤖 دستیار هوشمند AI"), callback_data="ai_chat"),
+            InlineKeyboardButton(text=t("translate", "🌐 ترجمه تخصصی متن"), callback_data="ai:translate_menu"),
         ],
-        # ردیف ۶: تنظیمات
+        # ردیف ۷: رویدادها و داشبورد روزانه
         [
-            InlineKeyboardButton(text=t("language", "🌍 تغییر زبان"), callback_data="change_lang"),
+            InlineKeyboardButton(text=t("today", "📅 داشبورد من"), callback_data="today"),
+            InlineKeyboardButton(text=t("events", "🎉 رویدادها و تورها"), callback_data="events"),
         ],
+        # ردیف ۸: پشتیبانی و تغییر زبان
+        [
+            InlineKeyboardButton(text=t("feedback", "📝 پشتیبانی و بازخورد"), callback_data="feedback"),
+            InlineKeyboardButton(text=t("language", "🌍 تغییر زبان (Language)"), callback_data="change_lang"),
+        ]
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
@@ -265,29 +281,42 @@ def get_back_button(lang: dict) -> InlineKeyboardMarkup:
 async def cmd_start(message: Message):
     """
     هندلر دستور /start
-    نقطه شروع تعامل کاربر با ربات
+    نقطه شروع تعامل کاربر با ربات همراه با معرفی جامع تمامی امکانات
     """
     user = message.from_user
     logger.info(f"👤 Start command from user: {user.id}")
 
-    # بارگذاری زبان
-    lang = get_user_lang(user.id)
-    
-    # اگر کاربر تازه وارد است (یا زبان ست نشده)، متن پیش‌فرض انگلیسی/فارسی نشان داده شود
-    # اما اینجا فرض را بر زبانی که سیستم برگردانده (پیش‌فرض فارسی) می‌گیریم
-    
-    welcome_msg = get_text(lang, "welcome_message", """
-👋 <b>سلام! به ربات دستیار دانشجویان پروجا خوش آمدید.</b>
+    # اضافه کردن کاربر به دیتابیس (پروفایل متمرکز)
+    from database import db_manager
+    lang_code = get_user_lang_code(user.id)
+    await db_manager.upsert_user(user.id, {
+        "first_name": user.first_name,
+        "last_name": user.last_name,
+        "username": user.username,
+        "language": lang_code
+    })
 
-من اینجا هستم تا در موارد زیر به شما کمک کنم:
-🔹 اخبار و اطلاعیه‌های دانشگاه
-🔹 راهنمای زندگی و تحصیل در پروجا
-🔹 هوش مصنوعی و ترجمه متون
-🔹 وضعیت آب‌وهوا و مکان‌های مهم
+    welcome_msg = """🎓 <b>به SmartStudentBot پروجا خوش آمدید!</b>
+━━━━━━━━━━━━━━━━━━━━━
+🇮🇹 <b>جامع‌ترین سامانه و دستیار هوشمند دانشجویان ایرانی در پروجا (ایتالیا)</b>
 
-لطفاً برای شروع، زبان خود را انتخاب کنید:
-Please select your language:
-    """)
+این ربات به عنوان یک پلتفرم همه‌جانبه، برای پاسخ به تمامی نیازهای تحصیلی و زندگی شما طراحی شده است:
+
+✨ <b>خدمات اصلی این سامانه:</b>
+🧮 <b>شبیه‌ساز و محاسبه‌گر ISEE:</b> محاسبه دقیق عدد ایزه برای دریافت بورسیه استانی ADiSU و معافیت شهریه
+💬 <b>مشاوره تخصصی تحصیلی:</b> ثبت پرونده پذیرش، اپلای و ویزای تحصیلی با امکان بارگذاری مدارک و رزومه
+🏠 <b>سامانه هم‌خانه‌یابی و مسکن:</b> جستجو، فیلتر و ثبت آگهی‌های اتاق و خانه دانشجویی با دسته‌بندی دقیق
+💰 <b>برآورد مخارج و هزینه‌ها:</b> تخمین دقیق و به روز هزینه‌های ماهانه زندگی در پروجا
+📍 <b>مکان‌های مهم شهر:</b> دسترسی به نقشه و آدرس ادارات (Questura, Agenzia)، خوابگاه‌ها و سلف‌ها
+🛒 <b>بازارچه دست‌دوم دانشجویی:</b> خرید و فروش کتاب، لوازم منزل و دوچرخه با امکان ثبت عکس
+📖 <b>راهنمای گام‌به‌گام:</b> از اخذ کد مالیاتی و پرمسو تا افتتاح حساب بانکی و بیمه سلامت
+🤖 <b>دستیار هوش مصنوعی و مترجم:</b> پاسخ سریع به سوالات تحصیلی و ترجمه ایتالیایی/فارسی/انگلیسی
+🌤 <b>آب‌وهوا و اخبار:</b> وضعیت جوی زنده و آخرین اطلاعیه‌های رسمی UniPG
+
+━━━━━━━━━━━━━━━━━━━━━
+🌐 <b>لطفاً برای شروع، زبان خود را انتخاب کنید:</b>
+<i>Please select your language to get started:</i>
+<i>Per favore seleziona la tua lingua per iniziare:</i>"""
 
     await message.answer(
         welcome_msg,
@@ -330,6 +359,48 @@ async def cmd_help(message: Message):
     )
 
 
+@router.message(Command("webapp"))
+@router.message(Command("app"))
+async def cmd_webapp(message: Message):
+    """باز کردن مستقیم مینی‌اپلیکیشن تلگرام"""
+    lang = get_user_lang(message.from_user.id)
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text=get_text(lang, "webapp_btn", "🌟 ورود به مینی‌اپلیکیشن پروجا (Mini App) 🚀"),
+            web_app=WebAppInfo(url=settings.WEBAPP_URL) if settings.WEBAPP_URL else None,
+            url=settings.WEBAPP_URL if not settings.WEBAPP_URL.startswith("https://") else None
+        )],
+        [InlineKeyboardButton(
+            text=get_text(lang, "back_to_menu", "🔙 بازگشت به منوی اصلی"),
+            callback_data="main_menu"
+        )]
+    ])
+    await message.answer(
+        "✨ <b>مینی‌اپلیکیشن اختصاصی دانشجویان پروجا</b> 🇮🇹\n\n"
+        "برای دسترسی به پنل زیبا و مدرن، جستجوی هم‌اتاقی، چت هوش مصنوعی، آب‌وهوا و خدمات شهری، روی دکمه زیر کلیک کنید:",
+        reply_markup=keyboard,
+        parse_mode="HTML"
+    )
+
+
+@router.callback_query(F.data == "open_webapp")
+async def cb_open_webapp(callback: CallbackQuery):
+    """پاسخ و هدایت کاربر به مینی‌اپلیکیشن تلگرام یا مرورگر"""
+    url = settings.WEBAPP_URL or "http://localhost:5173"
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📱 باز کردن مینی‌اپ در تلگرام", web_app=WebAppInfo(url=url))],
+        [InlineKeyboardButton(text="🌐 باز کردن مستقیم در مرورگر", url=url)],
+        [InlineKeyboardButton(text="🔙 بازگشت به منوی اصلی", callback_data="main_menu")]
+    ])
+    await callback.message.answer(
+        "🚀 <b>مینی‌اپلیکیشن هوشمند دانشجویان پروجا</b>\n\n"
+        "می‌توانید مینی‌اپلیکیشن را مستقیماً داخل تلگرام یا در مرورگر باز کنید:",
+        reply_markup=kb,
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # بخش ۶: پردازش Callback های زبان و منو
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -346,6 +417,16 @@ async def process_language_selection(callback: CallbackQuery):
         
     # ذخیره زبان
     set_user_lang(user_id, lang_code)
+    
+    # ذخیره در دیتابیس (پروفایل یکپارچه)
+    from database import db_manager
+    user = callback.from_user
+    await db_manager.upsert_user(user_id, {
+        "first_name": user.first_name,
+        "last_name": user.last_name,
+        "username": user.username,
+        "language": lang_code
+    })
     
     # بارگذاری متون زبان جدید
     lang = load_lang(lang_code)

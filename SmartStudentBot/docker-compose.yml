@@ -9,8 +9,11 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      - MONGO_URI=mongodb://mongo:27017/
+      - REDIS_URL=redis://redis:6379
     depends_on:
-      - postgres
+      - mongo
       - redis
     ports:
       - "8000:8000"
@@ -18,19 +21,15 @@ services:
       - .:/app                    # برای توسعه زنده
     command: python main.py       # در لوکال polling
 
-  # PostgreSQL
-  postgres:
-    image: postgres:16-alpine
-    container_name: smartstudentbot-postgres
+  # MongoDB
+  mongo:
+    image: mongo:6-jammy
+    container_name: smartstudentbot-mongo
     restart: unless-stopped
-    environment:
-      POSTGRES_USER: smartstudentbot
-      POSTGRES_PASSWORD: supersecretpassword123
-      POSTGRES_DB: smartstudentbot
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - mongo_data:/data/db
     ports:
-      - "5432:5432"
+      - "27017:27017"
 
   # Redis
   redis:
@@ -44,5 +43,5 @@ services:
       - "6379:6379"
 
 volumes:
-  postgres_data:
+  mongo_data:
   redis_data:

@@ -19,6 +19,13 @@ from aiogram.exceptions import TelegramBadRequest
 
 from config import settings, logger
 
+try:
+    from handlers.cmd_start import get_user_lang, get_text, get_user_lang_code
+except ImportError:
+    def get_user_lang(user_id: int) -> dict: return {}
+    def get_text(lang: dict, key: str, default: str = "") -> str: return default
+    def get_user_lang_code(user_id: int) -> str: return "fa"
+
 router = Router()
 
 
@@ -431,62 +438,79 @@ class FeedbackState(StatesGroup):
 
 @router.callback_query(F.data == "feedback")
 async def feedback_main_menu(callback: types.CallbackQuery, state: FSMContext):
-    """منوی اصلی پشتیبانی"""
-    
+    """منوی اصلی پشتیبانی چندزبانه"""
     await state.clear()
-    
     user_id = callback.from_user.id
+    lang_code = get_user_lang_code(user_id)
     is_admin = user_id in settings.ADMIN_CHAT_IDS
     
     # آمار کاربر
     user_tickets = get_user_tickets(user_id)
     open_tickets = [t for t in user_tickets if t.get("status") in ["open", "in_progress", "waiting"]]
     
-    text = (
-        "🎧 <b>مرکز پشتیبانی</b>\n\n"
-        "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-    )
-    
-    if open_tickets:
-        text += f"📬 شما <b>{len(open_tickets)}</b> تیکت باز دارید.\n\n"
-    
-    text += (
-        "💡 <b>راهنما:</b>\n"
-        "   • سوالات متداول را در FAQ بخوانید\n"
-        "   • برای مشکلات جدید تیکت ثبت کنید\n"
-        "   • پاسخ معمولاً ظرف ۲۴ ساعت داده می‌شود\n\n"
-        "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        "👇 انتخاب کنید:"
-    )
-    
-    buttons = [
-        [InlineKeyboardButton(
-            text="➕ ثبت درخواست جدید",
-            callback_data="fb_new_ticket"
-        )],
-        [InlineKeyboardButton(
-            text=f"📂 تیکت‌های من ({len(user_tickets)})",
-            callback_data="fb_my_tickets"
-        )],
-        [InlineKeyboardButton(
-            text="❓ سوالات متداول (FAQ)",
-            callback_data="fb_faq"
-        )]
-    ]
-    
-    # دکمه‌های ادمین
-    if is_admin:
-        stats = get_ticket_stats()
-        buttons.append([
-            InlineKeyboardButton(
-                text=f"📊 پنل ادمین ({stats['open']} باز)",
-                callback_data="fb_admin_panel"
-            )
-        ])
-    
-    buttons.append([
-        InlineKeyboardButton(text="🏠 منوی اصلی", callback_data="main_menu")
-    ])
+    if lang_code == "it":
+        text = "🎧 <b>Centro Supporto e Feedback</b>\n\n━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        if open_tickets:
+            text += f"📬 Hai <b>{len(open_tickets)}</b> ticket aperti.\n\n"
+        text += (
+            "💡 <b>Informazioni:</b>\n"
+            "   • Consulta le risposte rapide nelle FAQ\n"
+            "   • Invia un ticket per qualsiasi problema o domanda\n"
+            "   • Risposta entro 24 ore lavorative\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "👇 Scegli un'opzione:"
+        )
+        buttons = [
+            [InlineKeyboardButton(text="➕ Nuovo Ticket", callback_data="fb_new_ticket")],
+            [InlineKeyboardButton(text=f"📂 I Miei Ticket ({len(user_tickets)})", callback_data="fb_my_tickets")],
+            [InlineKeyboardButton(text="❓ Domande Frequenti (FAQ)", callback_data="fb_faq")]
+        ]
+        if is_admin:
+            stats = get_ticket_stats()
+            buttons.append([InlineKeyboardButton(text=f"📊 Pannello Admin ({stats['open']} aperti)", callback_data="fb_admin_panel")])
+        buttons.append([InlineKeyboardButton(text="🏠 Menu Principale", callback_data="main_menu")])
+    elif lang_code == "en":
+        text = "🎧 <b>Support Center & Feedback</b>\n\n━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        if open_tickets:
+            text += f"📬 You have <b>{len(open_tickets)}</b> open ticket(s).\n\n"
+        text += (
+            "💡 <b>Info:</b>\n"
+            "   • Check common answers in FAQ\n"
+            "   • Submit a new ticket for issues or questions\n"
+            "   • Usually answered within 24 business hours\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "👇 Select an option:"
+        )
+        buttons = [
+            [InlineKeyboardButton(text="➕ Open New Ticket", callback_data="fb_new_ticket")],
+            [InlineKeyboardButton(text=f"📂 My Tickets ({len(user_tickets)})", callback_data="fb_my_tickets")],
+            [InlineKeyboardButton(text="❓ FAQ & Help", callback_data="fb_faq")]
+        ]
+        if is_admin:
+            stats = get_ticket_stats()
+            buttons.append([InlineKeyboardButton(text=f"📊 Admin Panel ({stats['open']} open)", callback_data="fb_admin_panel")])
+        buttons.append([InlineKeyboardButton(text="🏠 Main Menu", callback_data="main_menu")])
+    else:
+        text = "🎧 <b>مرکز پشتیبانی</b>\n\n━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        if open_tickets:
+            text += f"📬 شما <b>{len(open_tickets)}</b> تیکت باز دارید.\n\n"
+        text += (
+            "💡 <b>راهنما:</b>\n"
+            "   • سوالات متداول را در FAQ بخوانید\n"
+            "   • برای مشکلات جدید تیکت ثبت کنید\n"
+            "   • پاسخ معمولاً ظرف ۲۴ ساعت داده می‌شود\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "👇 انتخاب کنید:"
+        )
+        buttons = [
+            [InlineKeyboardButton(text="➕ ثبت درخواست جدید", callback_data="fb_new_ticket")],
+            [InlineKeyboardButton(text=f"📂 تیکت‌های من ({len(user_tickets)})", callback_data="fb_my_tickets")],
+            [InlineKeyboardButton(text="❓ سوالات متداول (FAQ)", callback_data="fb_faq")]
+        ]
+        if is_admin:
+            stats = get_ticket_stats()
+            buttons.append([InlineKeyboardButton(text=f"📊 پنل ادمین ({stats['open']} باز)", callback_data="fb_admin_panel")])
+        buttons.append([InlineKeyboardButton(text="🏠 منوی اصلی", callback_data="main_menu")])
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
     

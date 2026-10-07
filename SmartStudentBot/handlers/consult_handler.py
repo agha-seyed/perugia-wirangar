@@ -11,6 +11,7 @@ from typing import Optional, Dict, Any, List, Tuple
 from pathlib import Path
 
 from aiogram import Router, types, F, Bot
+from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
@@ -23,6 +24,14 @@ from aiogram.types import (
     BufferedInputFile
 )
 from config import settings, logger
+
+try:
+    from handlers.cmd_start import get_user_lang, get_text, get_user_lang_code
+except ImportError:
+    def get_user_lang(user_id: int) -> dict: return {}
+    def get_text(lang: dict, key: str, default: str = "") -> str: return default
+    def get_user_lang_code(user_id: int) -> str: return "fa"
+
 
 router = Router()
 
@@ -375,15 +384,13 @@ def calculate_priority(data: Dict[str, Any]) -> str:
 # 5. توابع ذخیره‌سازی و بازیابی
 # ═══════════════════════════════════════════════════════════
 
-def save_consult_data(consult_id: str, data: Dict[str, Any]) -> bool:
-    """ذخیره داده‌های مشاوره"""
+async def save_consult_data(consult_id: str, data: Dict[str, Any]) -> bool:
+    """ذخیره داده‌های مشاوره در دیتابیس یکپارچه"""
     try:
+        from database import db_manager
         data['updated_at'] = get_jalali_datetime()
-        file_path = CONSULTS_DIR / f"{consult_id}.json"
-        
-        with open(file_path, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        
+        data['consult_id'] = consult_id
+        await db_manager.save_consult(consult_id, data)
         logger.info(f"✅ Consult saved: {consult_id}")
         return True
     except Exception as e:
@@ -391,29 +398,23 @@ def save_consult_data(consult_id: str, data: Dict[str, Any]) -> bool:
         return False
 
 
-def load_consult_data(consult_id: str) -> Optional[Dict[str, Any]]:
-    """بارگذاری داده‌های مشاوره"""
+async def load_consult_data(consult_id: str) -> Optional[Dict[str, Any]]:
+    """بارگذاری داده‌های مشاوره از دیتابیس"""
     try:
-        file_path = CONSULTS_DIR / f"{consult_id}.json"
-        if not file_path.exists():
-            return None
-        
-        with open(file_path, 'r', encoding='utf-8') as f:
-            return json.load(f)
+        from database import db_manager
+        return await db_manager.get_consult(consult_id)
     except Exception as e:
         logger.error(f"❌ Error loading consult {consult_id}: {e}")
         return None
 
 
-def save_support_ticket(ticket_id: str, data: Dict[str, Any]) -> bool:
-    """ذخیره تیکت پشتیبانی"""
+async def save_support_ticket(ticket_id: str, data: Dict[str, Any]) -> bool:
+    """ذخیره تیکت پشتیبانی در دیتابیس"""
     try:
+        from database import db_manager
         data['updated_at'] = get_jalali_datetime()
-        file_path = SUPPORT_DIR / f"{ticket_id}.json"
-        
-        with open(file_path, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        
+        data['ticket_id'] = ticket_id
+        await db_manager.save_ticket(ticket_id, data)
         logger.info(f"✅ Ticket saved: {ticket_id}")
         return True
     except Exception as e:
@@ -421,58 +422,67 @@ def save_support_ticket(ticket_id: str, data: Dict[str, Any]) -> bool:
         return False
 
 
-def load_support_ticket(ticket_id: str) -> Optional[Dict[str, Any]]:
-    """بارگذاری تیکت پشتیبانی"""
+async def load_support_ticket(ticket_id: str) -> Optional[Dict[str, Any]]:
+    """بارگذاری تیکت پشتیبانی از دیتابیس"""
     try:
-        file_path = SUPPORT_DIR / f"{ticket_id}.json"
-        if not file_path.exists():
-            return None
-        
-        with open(file_path, 'r', encoding='utf-8') as f:
-            return json.load(f)
+        from database import db_manager
+        return await db_manager.get_ticket(ticket_id)
     except Exception as e:
         logger.error(f"❌ Error loading ticket {ticket_id}: {e}")
         return None
 
 
-def find_user_consults(user_id: int) -> List[Dict[str, Any]]:
-    """پیدا کردن تمام درخواست‌های مشاوره یک کاربر"""
-    results = []
+async def find_user_consults(user_id: int) -> List[Dict[str, Any]]:
+    """پیدا کردن تمام درخواست‌های مشاوره یک کاربر از دیتابیس"""
     try:
+        from database import db_manager
+        db_results = await db_manager.get_user_consults(user_id)
+        if db_results:
+            return db_results
+            
+        # فال‌بک فایل‌های محلی در صورت وجود داده‌های قدیمی
+        results = []
         for file_path in CONSULTS_DIR.glob("*.json"):
-            with open(file_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                if data.get('telegram_id') == user_id:
-                    results.append(data)
-        
-        # مرتب‌سازی بر اساس تاریخ (جدیدترین اول)
-        results.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    if data.get('telegram_id') == user_id:
+                        results.append(data)
+            except Exception:
+                pass
+        return sorted(results, key=lambda x: x.get('created_at', ''), reverse=True)
     except Exception as e:
         logger.error(f"Error finding consults for user {user_id}: {e}")
-    
-    return results
+        return []
 
 
-def find_user_tickets(user_id: int) -> List[Dict[str, Any]]:
-    """پیدا کردن تمام تیکت‌های پشتیبانی یک کاربر"""
-    results = []
+async def find_user_tickets(user_id: int) -> List[Dict[str, Any]]:
+    """پیدا کردن تمام تیکت‌های پشتیبانی یک کاربر از دیتابیس"""
     try:
+        from database import db_manager
+        db_results = await db_manager.get_user_tickets(user_id)
+        if db_results:
+            return db_results
+            
+        # فال‌بک فایل‌های محلی در صورت وجود داده‌های قدیمی
+        results = []
         for file_path in SUPPORT_DIR.glob("*.json"):
-            with open(file_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                if data.get('user_id') == user_id:
-                    results.append(data)
-        
-        results.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    if data.get('user_id') == user_id:
+                        results.append(data)
+            except Exception:
+                pass
+        return sorted(results, key=lambda x: x.get('created_at', ''), reverse=True)
     except Exception as e:
         logger.error(f"Error finding tickets for user {user_id}: {e}")
-    
-    return results
+        return []
 
 
-def update_consult_status(consult_id: str, new_status: str, admin_note: str = "", admin_id: int = 0) -> bool:
+async def update_consult_status(consult_id: str, new_status: str, admin_note: str = "", admin_id: int = 0) -> bool:
     """بروزرسانی وضعیت درخواست مشاوره"""
-    data = load_consult_data(consult_id)
+    data = await load_consult_data(consult_id)
     if not data:
         return False
     
@@ -499,7 +509,7 @@ def update_consult_status(consult_id: str, new_status: str, admin_note: str = ""
             'note': admin_note
         })
     
-    return save_consult_data(consult_id, data)
+    return await save_consult_data(consult_id, data)
 
 
 # ═══════════════════════════════════════════════════════════
@@ -694,65 +704,131 @@ print("✅ بخش ۱ از ۴ بارگذاری شد: تعاریف، States و ت�
 # 8. صفحه معرفی و شروع مشاوره
 # ═══════════════════════════════════════════════════════════
 
+@router.message(Command("consult"))
 @router.callback_query(F.data == "consult")
-async def consult_intro(callback: types.CallbackQuery, state: FSMContext):
+async def consult_intro(event: types.Message | types.CallbackQuery, state: FSMContext):
     """صفحه معرفی و شروع مشاوره"""
     await state.clear()
-    user = callback.from_user
-    name = user.first_name or "دوست عزیز"
+    user = event.from_user
+    lang_code = get_user_lang_code(user.id)
+    name = user.first_name or ("Friend" if lang_code == "en" else ("Amico" if lang_code == "it" else "دوست عزیز"))
     
     # بررسی درخواست‌های قبلی
-    previous_consults = find_user_consults(user.id)
+    previous_consults = await find_user_consults(user.id)
     has_previous = len(previous_consults) > 0
     
-    text = f"👋 <b>سلام {name} عزیز!</b>\n"
-    text += "به بخش <b>مشاوره تخصصی تحصیل در ایتالیا</b> خوش آمدید! 🇮🇹🎓\n\n"
-    
-    text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-    text += "💡 <b>چرا این فرم مهم است؟</b>\n"
-    text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-    
-    text += "شرایط هر دانشجو متفاوت است. با تکمیل این فرم:\n\n"
-    text += "✅ <b>شانس پذیرش</b> شما را ارزیابی می‌کنیم\n"
-    text += "✅ <b>بهترین دانشگاه‌ها</b> را پیشنهاد می‌دهیم\n"
-    text += "✅ <b>مسیر بورسیه</b> را بررسی می‌کنیم\n"
-    text += "✅ <b>برنامه‌ریزی دقیق</b> برای ویزا انجام می‌دهیم\n\n"
-    
-    text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-    text += "📋 <b>اطلاعات فرم:</b>\n"
-    text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-    
-    text += "⏱ <b>زمان تکمیل:</b> حدود ۵ دقیقه\n"
-    text += "🔒 <b>حریم خصوصی:</b> اطلاعات کاملاً محرمانه\n"
-    text += "📞 <b>پاسخ‌گویی:</b> ظرف ۲۴ ساعت کاری\n"
-    text += "💰 <b>هزینه مشاوره اولیه:</b> رایگان\n\n"
-    
-    text += "🚀 <b>آماده‌اید آینده‌تان را بسازید؟</b>"
-    
-    # ساخت کیبورد
-    buttons = [
-        [InlineKeyboardButton(text="🚀 شروع مشاوره رایگان", callback_data="consult_start_form")]
-    ]
-    
-    if has_previous:
-        pending_count = sum(1 for c in previous_consults if c.get('status') == 'pending')
-        btn_text = f"📋 درخواست‌های قبلی ({len(previous_consults)})"
-        if pending_count > 0:
-            btn_text = f"📋 درخواست‌های قبلی ({pending_count} در انتظار)"
-        buttons.append([InlineKeyboardButton(text=btn_text, callback_data="consult_my_requests")])
-    
-    buttons.append([InlineKeyboardButton(text="💬 پشتیبانی و سوالات", callback_data="support_main")])
-    buttons.append([InlineKeyboardButton(text="🏠 بازگشت به منوی اصلی", callback_data="main_menu")])
+    if lang_code == "en":
+        text = f"👋 <b>Hello {name}!</b>\n"
+        text += "Welcome to the <b>Study in Italy Advisory & Consultation Desk</b>! 🇮🇹🎓\n\n"
+        text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        text += "💡 <b>Why complete this form?</b>\n"
+        text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        text += "Every student's profile is distinct. By completing this form:\n\n"
+        text += "✅ We evaluate your <b>admission chances</b>\n"
+        text += "✅ We recommend the <b>best matching universities</b>\n"
+        text += "✅ We review your <b>DSU scholarship eligibility</b>\n"
+        text += "✅ We provide a detailed <b>visa roadmap</b>\n\n"
+        text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        text += "📋 <b>Key Details:</b>\n"
+        text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        text += "⏱ <b>Duration:</b> ~5 minutes\n"
+        text += "🔒 <b>Privacy:</b> 100% confidential\n"
+        text += "📞 <b>Response Time:</b> Within 24 business hours\n"
+        text += "💰 <b>Initial Consultation:</b> Free\n\n"
+        text += "🚀 <b>Ready to take the next step towards Italy?</b>"
+        
+        buttons = [
+            [InlineKeyboardButton(text="🚀 Start Free Consultation", callback_data="consult_start_form")]
+        ]
+        if has_previous:
+            pending_count = sum(1 for c in previous_consults if c.get('status') == 'pending')
+            btn_text = f"📋 My Requests ({len(previous_consults)})"
+            if pending_count > 0:
+                btn_text = f"📋 My Requests ({pending_count} pending)"
+            buttons.append([InlineKeyboardButton(text=btn_text, callback_data="consult_my_requests")])
+        buttons.append([InlineKeyboardButton(text="💬 Support & Questions", callback_data="support_main")])
+        buttons.append([InlineKeyboardButton(text="🏠 Return to Main Menu", callback_data="main_menu")])
+    elif lang_code == "it":
+        text = f"👋 <b>Ciao {name}!</b>\n"
+        text += "Benvenuto al servizio di <b>Consulenza Accademica per l'Italia</b>! 🇮🇹🎓\n\n"
+        text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        text += "💡 <b>Perché compilare questo modulo?</b>\n"
+        text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        text += "Ogni profilo studentesco è unico. Tramite questa richiesta:\n\n"
+        text += "✅ Valutiamo le tue <b>opportunità di ammissione</b>\n"
+        text += "✅ Suggeriamo le <b>migliori università e corsi</b>\n"
+        text += "✅ Esaminiamo i requisiti per la <b>Borsa di Studio DSU</b>\n"
+        text += "✅ Pianifichiamo le tempistiche per il <b>visto per studio</b>\n\n"
+        text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        text += "📋 <b>Dettagli:</b>\n"
+        text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        text += "⏱ <b>Tempo stimato:</b> Circa 5 minuti\n"
+        text += "🔒 <b>Privacy:</b> Dati rigorosamente riservati\n"
+        text += "📞 <b>Riscontro:</b> Entro 24 ore lavorative\n"
+        text += "💰 <b>Consulenza iniziale:</b> Gratuita\n\n"
+        text += "🚀 <b>Pronto a intraprendere i tuoi studi a Perugia?</b>"
+        
+        buttons = [
+            [InlineKeyboardButton(text="🚀 Inizia Consulenza Gratuita", callback_data="consult_start_form")]
+        ]
+        if has_previous:
+            pending_count = sum(1 for c in previous_consults if c.get('status') == 'pending')
+            btn_text = f"📋 Le Mie Richieste ({len(previous_consults)})"
+            if pending_count > 0:
+                btn_text = f"📋 Le Mie Richieste ({pending_count} in attesa)"
+            buttons.append([InlineKeyboardButton(text=btn_text, callback_data="consult_my_requests")])
+        buttons.append([InlineKeyboardButton(text="💬 Assistenza e Domande", callback_data="support_main")])
+        buttons.append([InlineKeyboardButton(text="🏠 Torna al Menu Principale", callback_data="main_menu")])
+    else:
+        text = f"👋 <b>سلام {name} عزیز!</b>\n"
+        text += "به بخش <b>مشاوره تخصصی تحصیل در ایتالیا</b> خوش آمدید! 🇮🇹🎓\n\n"
+        
+        text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        text += "💡 <b>چرا این فرم مهم است؟</b>\n"
+        text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        
+        text += "شرایط هر دانشجو متفاوت است. با تکمیل این فرم:\n\n"
+        text += "✅ <b>شانس پذیرش</b> شما را ارزیابی می‌کنیم\n"
+        text += "✅ <b>بهترین دانشگاه‌ها</b> را پیشنهاد می‌دهیم\n"
+        text += "✅ <b>مسیر بورسیه</b> را بررسی می‌کنیم\n"
+        text += "✅ <b>برنامه‌ریزی دقیق</b> برای ویزا انجام می‌دهیم\n\n"
+        
+        text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        text += "📋 <b>اطلاعات فرم:</b>\n"
+        text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        
+        text += "⏱ <b>زمان تکمیل:</b> حدود ۵ دقیقه\n"
+        text += "🔒 <b>حریم خصوصی:</b> اطلاعات کاملاً محرمانه\n"
+        text += "📞 <b>پاسخ‌گویی:</b> ظرف ۲۴ ساعت کاری\n"
+        text += "💰 <b>هزینه مشاوره اولیه:</b> رایگان\n\n"
+        
+        text += "🚀 <b>آماده‌اید آینده‌تان را بسازید؟</b>"
+        
+        # ساخت کیبورد
+        buttons = [
+            [InlineKeyboardButton(text="🚀 شروع مشاوره رایگان", callback_data="consult_start_form")]
+        ]
+        
+        if has_previous:
+            pending_count = sum(1 for c in previous_consults if c.get('status') == 'pending')
+            btn_text = f"📋 درخواست‌های قبلی ({len(previous_consults)})"
+            if pending_count > 0:
+                btn_text = f"📋 درخواست‌های قبلی ({pending_count} در انتظار)"
+            buttons.append([InlineKeyboardButton(text=btn_text, callback_data="consult_my_requests")])
+        
+        buttons.append([InlineKeyboardButton(text="💬 پشتیبانی و سوالات", callback_data="support_main")])
+        buttons.append([InlineKeyboardButton(text="🏠 بازگشت به منوی اصلی", callback_data="main_menu")])
     
     kb = InlineKeyboardMarkup(inline_keyboard=buttons)
     
-    try:
-        await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
-    except Exception:
-        await callback.message.delete()
-        await callback.message.answer(text, reply_markup=kb, parse_mode="HTML")
-    
-    await callback.answer()
+    if isinstance(event, types.CallbackQuery):
+        try:
+            await event.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+        except Exception:
+            await event.message.answer(text, reply_markup=kb, parse_mode="HTML")
+        await event.answer()
+    else:
+        await event.answer(text, reply_markup=kb, parse_mode="HTML")
 
 
 # ═══════════════════════════════════════════════════════════
@@ -763,7 +839,7 @@ async def consult_intro(callback: types.CallbackQuery, state: FSMContext):
 async def show_my_requests(callback: types.CallbackQuery):
     """نمایش لیست درخواست‌های قبلی کاربر"""
     user_id = callback.from_user.id
-    consults = find_user_consults(user_id)
+    consults = await find_user_consults(user_id)
     
     if not consults:
         text = "📭 <b>شما هنوز درخواست مشاوره‌ای ثبت نکرده‌اید.</b>\n\n"
@@ -1960,7 +2036,7 @@ async def process_phone(message: types.Message, state: FSMContext):
 
 @router.message(ConsultState.waiting_resume, F.document)
 async def process_resume_document(message: types.Message, state: FSMContext):
-    """پردازش فایل رزومه"""
+    """پردازش فایل رزومه / مدارک تحصیلی"""
     doc = message.document
     
     # بررسی حجم
@@ -1984,32 +2060,66 @@ async def process_resume_document(message: types.Message, state: FSMContext):
             )
             return
     
-    # ذخیره
+    # ذخیره در مستندات
     data = await state.get_data()
     if 'documents' not in data:
         data['documents'] = {}
-    data['documents']['resume_file_id'] = doc.file_id
-    data['documents']['resume_file_name'] = doc.file_name or "document"
-    data['tracking']['last_activity'] = get_jalali_datetime()
+    if 'additional_files' not in data['documents']:
+        data['documents']['additional_files'] = []
     
+    if not data['documents'].get('resume_file_id'):
+        data['documents']['resume_file_id'] = doc.file_id
+        data['documents']['resume_file_name'] = doc.file_name or "document.pdf"
+    else:
+        data['documents']['additional_files'].append({
+            'file_id': doc.file_id,
+            'file_name': doc.file_name or "document.pdf",
+            'type': 'document'
+        })
+    
+    data.setdefault('tracking', {})['last_activity'] = get_jalali_datetime()
     await state.update_data(**data)
     await show_extra_notes_step(message, state, doc.file_name)
 
 
 @router.message(ConsultState.waiting_resume, F.photo)
 async def process_resume_photo(message: types.Message, state: FSMContext):
-    """پردازش عکس"""
+    """پردازش عکس مدارک"""
     photo = message.photo[-1]
     
     data = await state.get_data()
     if 'documents' not in data:
         data['documents'] = {}
-    data['documents']['resume_file_id'] = photo.file_id
-    data['documents']['resume_file_name'] = "photo.jpg"
-    data['tracking']['last_activity'] = get_jalali_datetime()
+    if 'additional_files' not in data['documents']:
+        data['documents']['additional_files'] = []
     
+    if not data['documents'].get('resume_file_id'):
+        data['documents']['resume_file_id'] = photo.file_id
+        data['documents']['resume_file_name'] = "photo.jpg"
+    else:
+        data['documents']['additional_files'].append({
+            'file_id': photo.file_id,
+            'file_name': "photo.jpg",
+            'type': 'photo'
+        })
+    
+    data.setdefault('tracking', {})['last_activity'] = get_jalali_datetime()
     await state.update_data(**data)
-    await show_extra_notes_step(message, state, "تصویر ارسالی")
+    await show_extra_notes_step(message, state, "تصویر مدرک")
+
+
+@router.message(ConsultState.waiting_resume, F.text)
+async def process_resume_text_guidance(message: types.Message, state: FSMContext):
+    """راهنمایی در صورت ارسال پیام متنی به جای فایل"""
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⏭ بدون ارسال فایل ادامه بده", callback_data="resume_skip")],
+        [InlineKeyboardButton(text="🔙 مرحله قبل", callback_data="consult_back")]
+    ])
+    await message.reply(
+        "📎 لطفاً فایل PDF رزومه یا تصویر مدارک خود را ارسال کنید.\n"
+        "یا اگر در حال حاضر فایلی ندارید، دکمه «بدون ارسال فایل ادامه بده» را لمس کنید.",
+        reply_markup=kb
+    )
 
 
 @router.callback_query(ConsultState.waiting_resume, F.data == "resume_skip")
@@ -2018,9 +2128,7 @@ async def skip_resume(callback: types.CallbackQuery, state: FSMContext):
     data = await state.get_data()
     if 'documents' not in data:
         data['documents'] = {}
-    data['documents']['resume_file_id'] = ""
-    data['documents']['resume_file_name'] = ""
-    data['tracking']['last_activity'] = get_jalali_datetime()
+    data.setdefault('tracking', {})['last_activity'] = get_jalali_datetime()
     
     await state.update_data(**data)
     await show_extra_notes_step(callback.message, state, None, is_callback=True)
@@ -2028,23 +2136,21 @@ async def skip_resume(callback: types.CallbackQuery, state: FSMContext):
 
 
 async def show_extra_notes_step(message: types.Message, state: FSMContext, file_name: str = None, is_callback: bool = False):
-    """نمایش مرحله توضیحات"""
+    """نمایش مرحله توضیحات و مدارک تکمیلی"""
     await state.set_state(ConsultState.waiting_extra)
     
     if file_name:
-        text = f"✅ فایل دریافت شد: <b>{file_name}</b>\n\n"
+        text = f"✅ مدرک دریافت شد: <b>{file_name}</b>\n\n"
     else:
         text = "✅ بدون فایل ادامه می‌دهیم.\n\n"
     
     text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-    text += "📝 <b>توضیحات تکمیلی (اختیاری)</b>\n"
+    text += "📝 <b>توضیحات تکمیلی و مدارک بیشتر (اختیاری)</b>\n"
     text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-    text += "💬 <b>سؤال یا توضیح خاصی دارید؟</b>\n\n"
-    text += "می‌توانید بنویسید:\n"
-    text += "• سؤالات خاص درباره پذیرش\n"
-    text += "• شرایط ویژه‌ای که دارید\n"
-    text += "• هر نکته مهم دیگر\n\n"
-    text += "<i>💡 یا مستقیم ثبت کنید</i>"
+    text += "💬 در این مرحله می‌توانید:\n"
+    text += "• فایل‌های PDF یا تصاویر مدارک دیگر را ارسال کنید\n"
+    text += "• توضیحات یا سوالات خاص خود را بنویسید\n"
+    text += "• یا مستقیم دکمه <b>«ثبت و پیش‌نمایش»</b> را بزنید."
     
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✅ ثبت و پیش‌نمایش", callback_data="show_preview")],
@@ -2057,10 +2163,98 @@ async def show_extra_notes_step(message: types.Message, state: FSMContext, file_
         await message.reply(text, reply_markup=kb, parse_mode="HTML")
 
 
-@router.message(ConsultState.waiting_extra)
+@router.message(ConsultState.waiting_extra, F.document)
+async def process_extra_document(message: types.Message, state: FSMContext):
+    """پشتیبانی از ارسال مدارک و فایل‌های PDF بیشتر در مرحله توضیحات"""
+    doc = message.document
+    
+    if doc.file_size and doc.file_size > MAX_FILE_SIZE:
+        await message.reply(
+            f"⚠️ <b>حجم فایل زیاد است.</b>\nحداکثر: {format_file_size(MAX_FILE_SIZE)}",
+            parse_mode="HTML"
+        )
+        return
+        
+    data = await state.get_data()
+    if 'documents' not in data:
+        data['documents'] = {}
+    if 'additional_files' not in data['documents']:
+        data['documents']['additional_files'] = []
+        
+    if not data['documents'].get('resume_file_id'):
+        data['documents']['resume_file_id'] = doc.file_id
+        data['documents']['resume_file_name'] = doc.file_name or "document.pdf"
+    else:
+        data['documents']['additional_files'].append({
+            'file_id': doc.file_id,
+            'file_name': doc.file_name or "document.pdf",
+            'type': 'document'
+        })
+        
+    if message.caption:
+        current_notes = data.get('notes', {}).get('user_notes', '')
+        caption = message.caption.strip()
+        data.setdefault('notes', {})['user_notes'] = f"{current_notes}\n{caption}".strip()
+        
+    data.setdefault('tracking', {})['last_activity'] = get_jalali_datetime()
+    await state.update_data(**data)
+    
+    total_docs = (1 if data['documents'].get('resume_file_id') else 0) + len(data['documents'].get('additional_files', []))
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ ثبت و پیش‌نمایش نهایی", callback_data="show_preview")],
+        [InlineKeyboardButton(text="🔙 مرحله قبل", callback_data="consult_back")]
+    ])
+    await message.reply(
+        f"✅ فایل مدرک دریافت شد: <b>{doc.file_name or 'فایل'}</b>\n"
+        f"📁 مجموع مدارک ذخیره شده: <b>{total_docs} فایل</b>\n\n"
+        f"می‌توانید فایل دیگری بفرستید، توضیح بنویسید یا دکمه «ثبت و پیش‌نمایش نهایی» را بزنید.",
+        reply_markup=kb,
+        parse_mode="HTML"
+    )
+
+
+@router.message(ConsultState.waiting_extra, F.photo)
+async def process_extra_photo(message: types.Message, state: FSMContext):
+    """پشتیبانی از ارسال تصاویر مدارک در مرحله توضیحات"""
+    photo = message.photo[-1]
+    data = await state.get_data()
+    if 'documents' not in data:
+        data['documents'] = {}
+    if 'additional_files' not in data['documents']:
+        data['documents']['additional_files'] = []
+        
+    data['documents']['additional_files'].append({
+        'file_id': photo.file_id,
+        'file_name': "photo.jpg",
+        'type': 'photo'
+    })
+    
+    if message.caption:
+        current_notes = data.get('notes', {}).get('user_notes', '')
+        caption = message.caption.strip()
+        data.setdefault('notes', {})['user_notes'] = f"{current_notes}\n{caption}".strip()
+        
+    data.setdefault('tracking', {})['last_activity'] = get_jalali_datetime()
+    await state.update_data(**data)
+    
+    total_docs = (1 if data['documents'].get('resume_file_id') else 0) + len(data['documents'].get('additional_files', []))
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ ثبت و پیش‌نمایش نهایی", callback_data="show_preview")],
+        [InlineKeyboardButton(text="🔙 مرحله قبل", callback_data="consult_back")]
+    ])
+    await message.reply(
+        f"✅ تصویر دریافت شد.\n"
+        f"📁 مجموع مدارک ذخیره شده: <b>{total_docs} فایل</b>\n\n"
+        f"می‌توانید فایل دیگری بفرستید، توضیح بنویسید یا دکمه «ثبت و پیش‌نمایش نهایی» را بزنید.",
+        reply_markup=kb,
+        parse_mode="HTML"
+    )
+
+
+@router.message(ConsultState.waiting_extra, F.text)
 async def process_extra_notes(message: types.Message, state: FSMContext):
-    """پردازش توضیحات"""
-    notes = message.text.strip()
+    """پردازش توضیحات متنی"""
+    notes = message.text.strip() if message.text else ""
     
     if len(notes) > 1500:
         await message.reply(
@@ -2072,8 +2266,9 @@ async def process_extra_notes(message: types.Message, state: FSMContext):
     data = await state.get_data()
     if 'notes' not in data:
         data['notes'] = {}
-    data['notes']['user_notes'] = notes
-    data['tracking']['last_activity'] = get_jalali_datetime()
+    current_notes = data['notes'].get('user_notes', '')
+    data['notes']['user_notes'] = f"{current_notes}\n{notes}".strip() if current_notes else notes
+    data.setdefault('tracking', {})['last_activity'] = get_jalali_datetime()
     
     await state.update_data(**data)
     await state.set_state(ConsultState.waiting_preview)
@@ -2086,8 +2281,7 @@ async def show_preview_callback(callback: types.CallbackQuery, state: FSMContext
     data = await state.get_data()
     if 'notes' not in data:
         data['notes'] = {}
-    data['notes']['user_notes'] = ""
-    data['tracking']['last_activity'] = get_jalali_datetime()
+    data.setdefault('tracking', {})['last_activity'] = get_jalali_datetime()
     
     await state.update_data(**data)
     await state.set_state(ConsultState.waiting_preview)
@@ -2105,34 +2299,70 @@ async def support_main_menu(callback: types.CallbackQuery, state: FSMContext):
     await state.clear()
     
     user = callback.from_user
-    user_tickets = find_user_tickets(user.id)
+    lang_code = get_user_lang_code(user.id)
+    user_tickets = await find_user_tickets(user.id)
     open_tickets = [t for t in user_tickets if t.get('status') in ['open', 'in_progress', 'waiting_user']]
     
-    text = "💬 <b>مرکز پشتیبانی</b>\n"
-    text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-    
-    text += "به بخش پشتیبانی خوش آمدید! 👋\n\n"
-    
-    text += "🎯 <b>خدمات ما:</b>\n"
-    text += "• پاسخ به سؤالات درباره تحصیل در ایتالیا\n"
-    text += "• راهنمایی درباره مراحل اپلای\n"
-    text += "• رفع مشکلات فنی ربات\n"
-    text += "• پیگیری درخواست مشاوره\n\n"
-    
-    if open_tickets:
-        text += f"📋 <b>تیکت‌های باز شما:</b> {len(open_tickets)} مورد\n\n"
-    
-    text += "⏱ <b>زمان پاسخگویی:</b> معمولاً ظرف ۲۴ ساعت"
-    
-    buttons = [
-        [InlineKeyboardButton(text="📝 ثبت تیکت جدید", callback_data="support_new_ticket")]
-    ]
-    
-    if user_tickets:
-        buttons.append([InlineKeyboardButton(text=f"📋 تیکت‌های من ({len(user_tickets)})", callback_data="support_my_tickets")])
-    
-    buttons.append([InlineKeyboardButton(text="❓ سؤالات متداول (FAQ)", callback_data="support_faq")])
-    buttons.append([InlineKeyboardButton(text="🔙 بازگشت به منو", callback_data="main_menu")])
+    if lang_code == "en":
+        text = "💬 <b>Support & Help Desk</b>\n"
+        text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        text += "Welcome to the Student Support Center! 👋\n\n"
+        text += "🎯 <b>Our Services:</b>\n"
+        text += "• Clarifications regarding studies in Italy\n"
+        text += "• Step-by-step guidance on university procedures\n"
+        text += "• Bot troubleshooting & assistance\n"
+        text += "• Tracking your consultation request\n\n"
+        if open_tickets:
+            text += f"📋 <b>Your Open Tickets:</b> {len(open_tickets)}\n\n"
+        text += "⏱ <b>Average Response Time:</b> Within 24 business hours"
+        
+        buttons = [
+            [InlineKeyboardButton(text="📝 Create New Ticket", callback_data="support_new_ticket")]
+        ]
+        if user_tickets:
+            buttons.append([InlineKeyboardButton(text=f"📋 My Tickets ({len(user_tickets)})", callback_data="support_my_tickets")])
+        buttons.append([InlineKeyboardButton(text="❓ Frequently Asked Questions (FAQ)", callback_data="support_faq")])
+        buttons.append([InlineKeyboardButton(text="🔙 Return to Main Menu", callback_data="main_menu")])
+    elif lang_code == "it":
+        text = "💬 <b>Centro di Assistenza</b>\n"
+        text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        text += "Benvenuto al Centro di Supporto Studenti! 👋\n\n"
+        text += "🎯 <b>I Nostri Servizi:</b>\n"
+        text += "• Informazioni generali sugli studi a Perugia\n"
+        text += "• Assistenza sulle procedure universitarie\n"
+        text += "• Risoluzione problemi tecnici del bot\n"
+        text += "• Stato della tua richiesta di consulenza\n\n"
+        if open_tickets:
+            text += f"📋 <b>I Tuoi Ticket Aperti:</b> {len(open_tickets)}\n\n"
+        text += "⏱ <b>Tempi di Risposta:</b> Entro 24 ore lavorative"
+        
+        buttons = [
+            [InlineKeyboardButton(text="📝 Apri Nuovo Ticket", callback_data="support_new_ticket")]
+        ]
+        if user_tickets:
+            buttons.append([InlineKeyboardButton(text=f"📋 I Miei Ticket ({len(user_tickets)})", callback_data="support_my_tickets")])
+        buttons.append([InlineKeyboardButton(text="❓ Domande Frequenti (FAQ)", callback_data="support_faq")])
+        buttons.append([InlineKeyboardButton(text="🔙 Torna al Menu Principale", callback_data="main_menu")])
+    else:
+        text = "💬 <b>مرکز پشتیبانی</b>\n"
+        text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        text += "به بخش پشتیبانی خوش آمدید! 👋\n\n"
+        text += "🎯 <b>خدمات ما:</b>\n"
+        text += "• پاسخ به سؤالات درباره تحصیل در ایتالیا\n"
+        text += "• راهنمایی درباره مراحل اپلای\n"
+        text += "• رفع مشکلات فنی ربات\n"
+        text += "• پیگیری درخواست مشاوره\n\n"
+        if open_tickets:
+            text += f"📋 <b>تیکت‌های باز شما:</b> {len(open_tickets)} مورد\n\n"
+        text += "⏱ <b>زمان پاسخگویی:</b> معمولاً ظرف ۲۴ ساعت"
+        
+        buttons = [
+            [InlineKeyboardButton(text="📝 ثبت تیکت جدید", callback_data="support_new_ticket")]
+        ]
+        if user_tickets:
+            buttons.append([InlineKeyboardButton(text=f"📋 تیکت‌های من ({len(user_tickets)})", callback_data="support_my_tickets")])
+        buttons.append([InlineKeyboardButton(text="❓ سؤالات متداول (FAQ)", callback_data="support_faq")])
+        buttons.append([InlineKeyboardButton(text="🔙 بازگشت به منو", callback_data="main_menu")])
     
     kb = InlineKeyboardMarkup(inline_keyboard=buttons)
     
@@ -2324,7 +2554,7 @@ async def submit_ticket(callback: types.CallbackQuery, state: FSMContext, bot: B
         'timestamp': get_jalali_datetime()
     }]
     
-    save_success = save_support_ticket(ticket_data['ticket_id'], ticket_data)
+    save_success = await save_support_ticket(ticket_data['ticket_id'], ticket_data)
     
     if not save_success:
         await callback.answer("⚠️ خطا در ثبت تیکت", show_alert=True)
@@ -2428,7 +2658,7 @@ async def send_ticket_to_admins(bot: Bot, ticket_data: dict, user: types.User):
 async def show_my_tickets(callback: types.CallbackQuery):
     """نمایش تیکت‌های کاربر"""
     user_id = callback.from_user.id
-    tickets = find_user_tickets(user_id)
+    tickets = await find_user_tickets(user_id)
     
     if not tickets:
         text = "📭 <b>شما هنوز تیکتی ثبت نکرده‌اید.</b>\n\n"
@@ -2481,29 +2711,33 @@ async def show_my_tickets(callback: types.CallbackQuery):
 
 @router.callback_query(F.data == "support_faq")
 async def show_faq(callback: types.CallbackQuery):
-    """نمایش سؤالات متداول"""
-    text = "❓ <b>سؤالات متداول</b>\n"
+    """نمایش سؤالات متداول چندزبانه"""
+    user_id = callback.from_user.id
+    lang = get_user_lang(user_id)
+    
+    def t(k, d): return get_text(lang, k, d)
+    
+    text = t("support_faq_title", "❓ <b>سؤالات متداول</b>") + "\n"
     text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
     
-    text += "<b>🎓 شرایط تحصیل در ایتالیا چیست؟</b>\n"
-    text += "برای تحصیل در ایتالیا نیاز به مدرک تحصیلی معتبر، مدرک زبان (انگلیسی یا ایتالیایی) و تأمین مالی دارید.\n\n"
+    text += t("support_faq_q1", "<b>🎓 شرایط تحصیل در ایتالیا چیست؟</b>") + "\n"
+    text += t("support_faq_a1", "برای تحصیل در ایتالیا نیاز به مدرک تحصیلی معتبر، مدرک زبان (انگلیسی یا ایتالیایی) و تأمین مالی دارید.") + "\n\n"
     
-    text += "<b>💰 هزینه تحصیل چقدر است؟</b>\n"
-    text += "شهریه دانشگاه‌های دولتی: ۱۵۰-۴۰۰۰ یورو در سال\n"
-    text += "هزینه زندگی: ۵۰۰-۱۲۰۰ یورو در ماه\n\n"
+    text += t("support_faq_q2", "<b>💰 هزینه تحصیل چقدر است؟</b>") + "\n"
+    text += t("support_faq_a2", "شهریه دانشگاه‌های دولتی: ۱۵۰-۴۰۰۰ یورو در سال\nهزینه زندگی: ۵۰۰-۱۲۰۰ یورو در ماه") + "\n\n"
     
-    text += "<b>🛂 ویزای تحصیلی چگونه است؟</b>\n"
-    text += "پس از اخذ پذیرش، باید از سفارت ایتالیا ویزای تحصیلی (Type D) بگیرید.\n\n"
+    text += t("support_faq_q3", "<b>🛂 ویزای تحصیلی چگونه است؟</b>") + "\n"
+    text += t("support_faq_a3", "پس از اخذ پذیرش، باید از سفارت ایتالیا ویزای تحصیلی (Type D) بگیرید.") + "\n\n"
     
-    text += "<b>📚 آیا می‌توان بدون مدرک زبان اپلای کرد؟</b>\n"
-    text += "بله، برخی دانشگاه‌ها بدون مدرک زبان پذیرش می‌دهند اما داشتن مدرک شانس را افزایش می‌دهد.\n\n"
+    text += t("support_faq_q4", "<b>📚 آیا می‌توان بدون مدرک زبان اپلای کرد؟</b>") + "\n"
+    text += t("support_faq_a4", "بله، برخی دانشگاه‌ها بدون مدرک زبان پذیرش می‌دهند اما داشتن مدرک شانس را افزایش می‌دهد.") + "\n\n"
     
-    text += "<b>⏱ چقدر طول می‌کشد؟</b>\n"
-    text += "از شروع تا ویزا معمولاً ۴-۸ ماه زمان نیاز است."
+    text += t("support_faq_q5", "<b>⏱ چقدر طول می‌کشد؟</b>") + "\n"
+    text += t("support_faq_a5", "از شروع تا ویزا معمولاً ۴-۸ ماه زمان نیاز است.")
     
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📝 سؤال دیگری دارم", callback_data="support_new_ticket")],
-        [InlineKeyboardButton(text="🔙 بازگشت", callback_data="support_main")]
+        [InlineKeyboardButton(text=t("support_new_ticket_btn", "📝 سؤال دیگری دارم"), callback_data="support_new_ticket")],
+        [InlineKeyboardButton(text=t("support_back_btn", "🔙 بازگشت"), callback_data="support_main")]
     ])
     
     await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
@@ -2834,7 +3068,7 @@ async def confirm_submit(callback: types.CallbackQuery, state: FSMContext, bot: 
     data['tracking']['last_activity'] = get_jalali_datetime()
     
     # ذخیره
-    save_success = save_consult_data(consult_id, data)
+    save_success = await save_consult_data(consult_id, data)
     
     if not save_success:
         logger.error(f"Failed to save consult: {consult_id}")
@@ -3222,55 +3456,67 @@ async def send_full_admin_report(bot: Bot, data: dict, user: types.User):
 
 
 # ═══════════════════════════════════════════════════════════
-# 40. ارسال فایل رزومه به ادمین (بهبود یافته)
+# 40. ارسال فایل رزومه و مدارک به ادمین (پشتیبانی از چندین فایل)
 # ═══════════════════════════════════════════════════════════
 
 async def forward_resume_to_admins(bot: Bot, data: dict, consult_id: str):
-    """ارسال فایل رزومه به ادمین‌ها با اطلاعات کامل"""
-    
+    """ارسال تمام فایل‌های رزومه و مدارک به ادمین‌ها"""
     documents = data.get('documents', {})
-    file_id = documents.get('resume_file_id')
-    file_name = documents.get('resume_file_name', 'document')
+    files_to_send = []
     
-    if not file_id:
+    # فایل اصلی
+    if documents.get('resume_file_id'):
+        files_to_send.append({
+            'file_id': documents['resume_file_id'],
+            'file_name': documents.get('resume_file_name', 'document.pdf'),
+            'type': 'photo' if documents.get('resume_file_name', '').lower().endswith(('.jpg', '.jpeg', '.png', '.webp')) else 'doc'
+        })
+        
+    # فایل‌های اضافی
+    for extra in documents.get('additional_files', []):
+        f_id = extra.get('file_id')
+        if f_id:
+            files_to_send.append({
+                'file_id': f_id,
+                'file_name': extra.get('file_name', 'document.pdf'),
+                'type': extra.get('type', 'doc')
+            })
+            
+    if not files_to_send:
         return
     
     personal = data.get('personal', {})
     education = data.get('education', {})
     study_plan = data.get('study_plan', {})
     
-    # کپشن کامل برای فایل
-    caption = f"📎 <b>فایل پیوست درخواست مشاوره</b>\n"
-    caption += f"━━━━━━━━━━━━━━━━━━━━━\n\n"
-    caption += f"🔖 <b>کد رهگیری:</b> <code>{consult_id}</code>\n"
-    caption += f"👤 <b>نام:</b> {personal.get('name', '---')}\n"
-    caption += f"🎓 <b>مقطع فعلی:</b> {education.get('current_level', '---')}\n"
-    caption += f"🎯 <b>هدف:</b> {study_plan.get('target_degree', '---')}\n"
-    caption += f"📄 <b>نام فایل:</b> {file_name}\n"
-    caption += f"\n━━━━━━━━━━━━━━━━━━━━━"
-    
-    for admin_id in settings.ADMIN_CHAT_IDS:
-        try:
-            # تشخیص نوع فایل
-            if file_name.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp')):
-                await bot.send_photo(
-                    chat_id=admin_id, 
-                    photo=file_id, 
-                    caption=caption, 
-                    parse_mode="HTML"
-                )
-            else:
-                await bot.send_document(
-                    chat_id=admin_id, 
-                    document=file_id, 
-                    caption=caption, 
-                    parse_mode="HTML"
-                )
-            
-            logger.info(f"✅ Resume forwarded to admin {admin_id} for {consult_id}")
-            
-        except Exception as e:
-            logger.error(f"❌ Failed to forward resume to {admin_id}: {e}")
+    for idx, f_item in enumerate(files_to_send, 1):
+        caption = f"📎 <b>مدرک ارسالی متقاضی ({idx}/{len(files_to_send)})</b>\n"
+        caption += f"━━━━━━━━━━━━━━━━━━━━━\n\n"
+        caption += f"🔖 <b>کد رهگیری:</b> <code>{consult_id}</code>\n"
+        caption += f"👤 <b>نام:</b> {personal.get('name', '---')}\n"
+        caption += f"🎓 <b>مقطع فعلی:</b> {education.get('current_level', '---')}\n"
+        caption += f"🎯 <b>هدف:</b> {study_plan.get('target_degree', '---')}\n"
+        caption += f"📄 <b>نام فایل:</b> {f_item['file_name']}\n"
+        caption += f"\n━━━━━━━━━━━━━━━━━━━━━"
+        
+        for admin_id in settings.ADMIN_CHAT_IDS:
+            try:
+                if f_item['type'] == 'photo' or f_item['file_name'].lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp')):
+                    await bot.send_photo(
+                        chat_id=admin_id, 
+                        photo=f_item['file_id'], 
+                        caption=caption, 
+                        parse_mode="HTML"
+                    )
+                else:
+                    await bot.send_document(
+                        chat_id=admin_id, 
+                        document=f_item['file_id'], 
+                        caption=caption, 
+                        parse_mode="HTML"
+                    )
+            except Exception as e:
+                logger.error(f"❌ Failed to forward doc to {admin_id}: {e}")
 
 # ═══════════════════════════════════════════════════════════
 # 41. پیام موفقیت به کاربر
@@ -3282,28 +3528,28 @@ async def send_success_to_user(message: types.Message, consult_id: str, data: di
     name = personal.get('name', 'دوست عزیز')
     
     text = f"🎉 <b>تبریک {name}!</b>\n"
-    text += "<b>درخواست شما با موفقیت ثبت شد!</b>\n\n"
+    text += "<b>درخواست مشاوره شما با موفقیت ثبت شد!</b>\n\n"
     
     text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
     text += f"🔖 <b>کد رهگیری شما:</b>\n"
     text += f"<code>{consult_id}</code>\n"
     text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
     
-    text += "📌 <b>این کد را ذخیره کنید!</b>\n"
-    text += "برای پیگیری درخواست به این کد نیاز دارید.\n\n"
+    text += "📌 <b>این کد را یادداشت یا ذخیره کنید!</b>\n"
+    text += "وضعیت بررسی پرونده و اقدامات بعدی از طریق همین ربات به شما اطلاع‌رسانی خواهد شد.\n\n"
     
     text += "⏰ <b>زمان پاسخ‌گویی:</b>\n"
-    text += "مشاوران ما ظرف <b>۲۴ ساعت کاری</b> با شما تماس می‌گیرند.\n\n"
+    text += "کارشناسان ما ظرف <b>۲۴ ساعت کاری</b> مدارک شما را بررسی و با شما تماس خواهند گرفت.\n\n"
     
     text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
     text += "💡 <b>پیشنهاد:</b>\n"
-    text += "تا زمان تماس مشاور، راهنماها را مطالعه کنید.\n"
+    text += "تا زمان بررسی، می‌توانید بخش‌های دیگر ربات (راهنما، برآورد مخارج، هم‌خانه) را مطالعه کنید.\n"
     text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📖 راهنمای تحصیل در ایتالیا", callback_data="guide_main")],
-        [InlineKeyboardButton(text="📋 پیگیری درخواست", callback_data="consult_my_requests")],
-        [InlineKeyboardButton(text="💬 پشتیبانی", callback_data="support_main")],
+        [InlineKeyboardButton(text="📖 راهنمای تحصیل و اقامت در پروجا", callback_data="guide_main")],
+        [InlineKeyboardButton(text="📋 پیگیری درخواست‌های من", callback_data="consult_my_requests")],
+        [InlineKeyboardButton(text="💬 پشتیبانی و تیکت", callback_data="support_main")],
         [InlineKeyboardButton(text="🏠 منوی اصلی", callback_data="main_menu")]
     ])
     
@@ -3311,20 +3557,17 @@ async def send_success_to_user(message: types.Message, consult_id: str, data: di
 
 
 # ═══════════════════════════════════════════════════════════
-# 42. هندلرهای تغییر وضعیت (ادمین)
+# 42. هندلرهای تغییر وضعیت (ادمین) + اعلان لحظه‌ای به دانشجو
 # ═══════════════════════════════════════════════════════════
 
 @router.callback_query(F.data.startswith("status_"))
 async def handle_status_change(callback: types.CallbackQuery):
-    """تغییر وضعیت درخواست توسط ادمین"""
-    # بررسی دسترسی
+    """تغییر وضعیت درخواست توسط ادمین و ارسال اعلان لحظه‌ای به متقاضی"""
     if callback.from_user.id not in settings.ADMIN_CHAT_IDS:
         await callback.answer("⛔ دسترسی ندارید.", show_alert=True)
         return
     
     parts = callback.data.split("_")
-    # status_contacted_CON-123456-1234
-    
     if len(parts) < 3:
         await callback.answer("خطا در پردازش", show_alert=True)
         return
@@ -3336,14 +3579,19 @@ async def handle_status_change(callback: types.CallbackQuery):
         "contacted": ("📞", "تماس گرفته شد", "contacted"),
         "progress": ("🔄", "در حال پیگیری", "in_progress"),
         "completed": ("✅", "تکمیل شد", "completed"),
-        "cancelled": ("❌", "لغو شد", "cancelled")
+        "cancelled": ("❌", "لغو/رد شد", "cancelled")
     }
     
     emoji, text_status, status_value = status_map.get(new_status, ("❓", "نامشخص", "pending"))
     
-    # بروزرسانی
-    admin_name = callback.from_user.first_name or "ادمین"
-    success = update_consult_status(
+    # دریافت اطلاعات درخواست برای ارسال پیام به دانشجو
+    consult = await load_consult_data(consult_id)
+    user_id = consult.get("telegram_id") if consult else None
+    applicant_name = consult.get("personal", {}).get("name", "دانشجوی گرامی") if consult else "دانشجوی گرامی"
+    
+    # بروزرسانی در دیتابیس
+    admin_name = callback.from_user.first_name or "مدیریت"
+    success = await update_consult_status(
         consult_id,
         status_value,
         f"تغییر وضعیت به «{text_status}» توسط {admin_name}",
@@ -3351,21 +3599,90 @@ async def handle_status_change(callback: types.CallbackQuery):
     )
     
     if success:
-        try:
-            new_text = callback.message.html_text
-            new_text += f"\n\n{'━' * 25}\n"
-            new_text += f"✏️ <b>بروزرسانی:</b>\n"
-            new_text += f"   • وضعیت: {emoji} {text_status}\n"
-            new_text += f"   • توسط: {admin_name}\n"
-            new_text += f"   • زمان: {get_jalali_datetime()}"
-            
-            await callback.message.edit_text(new_text, reply_markup=None, parse_mode="HTML")
-        except:
-            pass
+        # ارسال اعلان تلگرام به متقاضی
+        if user_id:
+            try:
+                status_user_messages = {
+                    "progress": "پرونده درخواست مشاوره تحصیلی شما در پروجا توسط کارشناسان دیده شد و در دست بررسی و پیگیری است.",
+                    "contacted": "پرونده شما بررسی شد و کارشناس مربوطه به‌زودی جهت هماهنگی و مشاوره مستقیم با شما ارتباط برقرار می‌کند.",
+                    "completed": "پرونده درخواست مشاوره شما با موفقیت بررسی و فرآیند آن تکمیل گردید.",
+                    "cancelled": "درخواست مشاوره شما لغو یا رد شد. در صورت نیاز می‌توانید درخواست جدیدی ثبت کنید."
+                }
+                user_alert = (
+                    f"🔔 <b>بروزرسانی وضعیت پرونده مشاوره تحصیلی</b>\n\n"
+                    f"سلام <b>{applicant_name}</b> عزیز،\n"
+                    f"وضعیت پرونده شما بروزرسانی شد:\n\n"
+                    f"🔖 کد رهگیری: <code>{consult_id}</code>\n"
+                    f"📌 وضعیت جدید: <b>{emoji} {text_status}</b>\n\n"
+                    f"ℹ️ {status_user_messages.get(new_status, 'وضعیت پرونده شما تغییر یافت.')}\n"
+                    f"⏰ زمان: {get_jalali_datetime()}\n\n"
+                    f"<i>با تشکر - تیم پشتیبانی پروجا</i>"
+                )
+                await callback.bot.send_message(
+                    chat_id=user_id,
+                    text=user_alert,
+                    parse_mode="HTML"
+                )
+            except Exception as e:
+                logger.warning(f"Failed to notify user {user_id}: {e}")
         
-        await callback.answer(f"✅ وضعیت: {text_status}")
+        # بروزرسانی پیام ادمین با حفظ دکمه‌ها برای تغییرات بعدی
+        try:
+            admin_kb = InlineKeyboardMarkup(inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="💬 پیام مستقیم به کاربر", 
+                        url=f"tg://user?id={user_id}"
+                    )
+                ] if user_id else [],
+                [
+                    InlineKeyboardButton(
+                        text="✅ تماس گرفته شد" + (" (فعلی)" if new_status == "contacted" else ""), 
+                        callback_data=f"status_contacted_{consult_id}"
+                    ),
+                    InlineKeyboardButton(
+                        text="🔄 در حال پیگیری" + (" (فعلی)" if new_status == "progress" else ""), 
+                        callback_data=f"status_progress_{consult_id}"
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text="📋 تکمیل شد" + (" (فعلی)" if new_status == "completed" else ""), 
+                        callback_data=f"status_completed_{consult_id}"
+                    ),
+                    InlineKeyboardButton(
+                        text="❌ لغو/رد شد" + (" (فعلی)" if new_status == "cancelled" else ""), 
+                        callback_data=f"status_cancelled_{consult_id}"
+                    )
+                ],
+                [
+                    InlineKeyboardButton(text="📊 داشبورد آمار", callback_data="admin_dashboard")
+                ]
+            ])
+            admin_kb.inline_keyboard = [row for row in admin_kb.inline_keyboard if row]
+            
+            # ثبت در انتهای متن گزارش ادمین
+            base_text = callback.message.html_text
+            # حذف بروزرسانی‌های قبلی از متن
+            if "✏️ <b>بروزرسانی:" in base_text:
+                base_text = base_text.split("━━━━━━━━━━━━━━━━━━━━━━━━━\n✏️ <b>بروزرسانی:")[0].strip()
+            
+            updated_text = (
+                f"{base_text}\n\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"✏️ <b>بروزرسانی:</b>\n"
+                f"   • آخرین وضعیت: {emoji} <b>{text_status}</b>\n"
+                f"   • توسط: {admin_name}\n"
+                f"   • زمان: {get_jalali_datetime()}"
+            )
+            
+            await callback.message.edit_text(updated_text, reply_markup=admin_kb, parse_mode="HTML")
+        except Exception as e:
+            logger.warning(f"Could not edit admin message: {e}")
+            
+        await callback.answer(f"✅ وضعیت تغییر کرد: {text_status} (به کاربر اطلاع داده شد)")
     else:
-        await callback.answer("⚠️ خطا در ثبت", show_alert=True)
+        await callback.answer("⚠️ خطا در ثبت تغییر وضعیت", show_alert=True)
 
 
 # ═══════════════════════════════════════════════════════════
@@ -3380,7 +3697,7 @@ async def admin_reply_ticket(callback: types.CallbackQuery, state: FSMContext):
         return
     
     ticket_id = callback.data.replace("admin_reply_ticket_", "")
-    ticket = load_support_ticket(ticket_id)
+    ticket = await load_support_ticket(ticket_id)
     
     if not ticket:
         await callback.answer("⚠️ تیکت یافت نشد.", show_alert=True)
@@ -3417,7 +3734,7 @@ async def process_admin_reply(message: types.Message, state: FSMContext, bot: Bo
         return
     
     # بروزرسانی تیکت
-    ticket = load_support_ticket(ticket_id)
+    ticket = await load_support_ticket(ticket_id)
     if ticket:
         ticket['conversations'].append({
             'from': 'admin',
@@ -3427,7 +3744,7 @@ async def process_admin_reply(message: types.Message, state: FSMContext, bot: Bo
             'timestamp': get_jalali_datetime()
         })
         ticket['status'] = 'waiting_user'
-        save_support_ticket(ticket_id, ticket)
+        await save_support_ticket(ticket_id, ticket)
     
     # ارسال پاسخ به کاربر
     user_msg = f"💬 <b>پاسخ پشتیبانی</b>\n\n"
@@ -3467,12 +3784,12 @@ async def resolve_ticket(callback: types.CallbackQuery):
         return
     
     ticket_id = callback.data.replace("ticket_resolve_", "")
-    ticket = load_support_ticket(ticket_id)
+    ticket = await load_support_ticket(ticket_id)
     
     if ticket:
         ticket['status'] = 'resolved'
         ticket['resolved_at'] = get_jalali_datetime()
-        save_support_ticket(ticket_id, ticket)
+        await save_support_ticket(ticket_id, ticket)
         await callback.answer("✅ تیکت حل شد.")
     else:
         await callback.answer("⚠️ تیکت یافت نشد.", show_alert=True)
@@ -3486,12 +3803,12 @@ async def ticket_in_progress(callback: types.CallbackQuery):
         return
     
     ticket_id = callback.data.replace("ticket_progress_", "")
-    ticket = load_support_ticket(ticket_id)
+    ticket = await load_support_ticket(ticket_id)
     
     if ticket:
         ticket['status'] = 'in_progress'
         ticket['assigned_to'] = callback.from_user.id
-        save_support_ticket(ticket_id, ticket)
+        await save_support_ticket(ticket_id, ticket)
         await callback.answer("🔄 در حال بررسی")
     else:
         await callback.answer("⚠️ تیکت یافت نشد.", show_alert=True)
@@ -3771,7 +4088,7 @@ async def cmd_find(message: types.Message):
         return
     
     consult_id = message.text.replace("/find ", "").strip()
-    data = load_consult_data(consult_id)
+    data = await load_consult_data(consult_id)
     
     if not data:
         await message.reply(f"❌ یافت نشد: <code>{consult_id}</code>", parse_mode="HTML")
@@ -3814,3 +4131,30 @@ print("   ✅ ویرایش اطلاعات قبل از ثبت")
 print("   ✅ پیگیری درخواست‌ها")
 print("   ✅ خروجی CSV")
 print("═" * 50)
+
+@router.callback_query(F.data == "smart_support_ticket")
+async def start_smart_ticket(callback: types.CallbackQuery, state: FSMContext):
+    await callback.message.answer("🤖 <b>پشتیبانی هوشمند</b>\nسوال یا مشکل خود را به صورت کامل بنویسید. هوش مصنوعی ابتدا سعی می‌کند آن را حل کند. اگر حل نشد، به پشتیبان‌های انسانی ارجاع داده می‌شود.", parse_mode="HTML")
+    await state.set_state("waiting_for_smart_ticket")
+
+@router.message(StateFilter("waiting_for_smart_ticket"))
+async def process_smart_ticket(message: types.Message, state: FSMContext):
+    user_query = message.text
+    loading = await message.answer("🧠 هوش مصنوعی در حال بررسی مشکل شماست...")
+    
+    prompt = f"شما یک پشتیبان هوشمند برای دانشجویان پروجا هستید. به این سوال یا مشکل کاربر با دقت، بر اساس قوانین دانشگاهی، بورس ADISU و شرایط ایتالیا پاسخ دهید:\n\n{user_query}"
+    
+    try:
+        from services.ai_service import ai_service
+        response = await ai_service.chat(prompt, context="support_agent")
+        
+        markup = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="✅ مشکلم حل شد", callback_data="ticket_resolved")],
+            [InlineKeyboardButton(text="👨‍💻 ارجاع به پشتیبان انسانی", callback_data="ticket_to_human")]
+        ])
+        
+        await loading.edit_text(f"🤖 <b>پاسخ هوش مصنوعی:</b>\n\n{response.text}\n\nآیا مشکل شما حل شد؟", reply_markup=markup, parse_mode="HTML")
+    except Exception as e:
+        await loading.edit_text("⚠️ خطا در پردازش هوش مصنوعی. لطفاً مستقیماً با پشتیبانی تماس بگیرید.")
+        
+    await state.clear()
