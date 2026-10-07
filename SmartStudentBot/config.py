@@ -81,8 +81,8 @@ class Settings:
     # تنظیمات سرور
     # ═══════════════════════════════════════════════════════════════════════════
     
-    # آدرس پایه سرور (برای webhook)
-    BASE_URL: str = os.getenv("BASE_URL", "http://localhost:8000").strip().rstrip("/")
+    # آدرس پایه سرور (برای webhook - خودکار در Render پشتیبانی می‌شود)
+    BASE_URL: str = (os.getenv("RENDER_EXTERNAL_URL") or os.getenv("BASE_URL", "http://localhost:8000")).strip().rstrip("/")
     
     # آدرس وب‌اپلیکیشن (Telegram Mini App URL)
     WEBAPP_URL: str = os.getenv("WEBAPP_URL", "https://smartstudentbot-perugia.vercel.app").strip().rstrip("/")
