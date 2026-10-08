@@ -375,10 +375,10 @@ QUICK_MODE_STEPS = 3  # حالت سریع: درآمد، اعضا، املاک
 
 async def get_eur_rate() -> Tuple[int, bool]:
     """
-    دریافت نرخ یورو با سیستم کش + چرخشی + Fallback
+    دریافت نرخ یورو با سیستم کش TGJU + Fallback هوشمند
     
     Returns:
-        Tuple[int, bool]: (نرخ یورو, آیا از API واقعی آمده)
+        Tuple[int, bool]: (نرخ یورو به تومان, آیا از منبع زنده است)
     """
     global current_api_index
     
@@ -388,7 +388,35 @@ async def get_eur_rate() -> Tuple[int, bool]:
         logger.debug(f"EUR rate from cache: {cached}")
         return cached, True
     
-    # درخواست از API با تایم‌اوت کوتاه و فال‌بک سریع
+    # ۱. تلاش از منبع زنده TGJU (نرخ آزاد صرافی‌ها)
+    tgju_urls = [
+        "https://call4.tgju.org/ajax.json",
+        "https://call3.tgju.org/ajax.json",
+        "https://call.tgju.org/ajax.json"
+    ]
+    for url in tgju_urls:
+        try:
+            async with httpx.AsyncClient(timeout=2.5, headers={"User-Agent": "Mozilla/5.0"}) as client:
+                resp = await client.get(url)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    curr = data.get("current", {})
+                    eur_obj = curr.get("price_eur") or curr.get("sarafiyaran_eur_sell") or curr.get("sarafiroyal_eur_sell")
+                    if eur_obj:
+                        val_str = eur_obj.get("p", "") if isinstance(eur_obj, dict) else str(eur_obj)
+                        import re
+                        clean = re.sub(r"[^\d]", "", val_str)
+                        if clean:
+                            rial = int(clean)
+                            toman = rial // 10
+                            if toman > 50000:
+                                data_store.set_cached_rate(toman)
+                                logger.info(f"✅ EUR rate fetched from TGJU: {toman:,} Toman")
+                                return toman, True
+        except Exception:
+            continue
+    
+    # ۲. تلاش از Navasan API
     for attempt in range(min(2, len(NAVASAN_API_KEYS))):
         api_key = NAVASAN_API_KEYS[current_api_index]
         current_api_index = (current_api_index + 1) % len(NAVASAN_API_KEYS)
@@ -410,8 +438,8 @@ async def get_eur_rate() -> Tuple[int, bool]:
         except Exception:
             pass
     
-    # Fallback سریع
-    fallback_rate = 74000
+    # ۳. Fallback به نرخ معتبر بازار روز
+    fallback_rate = 304000
     return fallback_rate, False
 
 

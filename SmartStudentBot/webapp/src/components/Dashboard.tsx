@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -13,7 +13,9 @@ import {
   DialogActions,
   Button,
   TextField,
-  IconButton
+  IconButton,
+  Checkbox,
+  LinearProgress
 } from '@mui/material';
 import {
   Cloud,
@@ -23,6 +25,7 @@ import {
   LocationOn,
   Storefront,
   Article,
+  Euro,
   Event,
   HeadsetMic,
   Code,
@@ -49,6 +52,7 @@ import {
   SupportAgent
 } from '@mui/icons-material';
 import { motion, AnimatePresence } from 'framer-motion';
+import { API_BASE } from '../apiConfig';
 
 const translations = {
   fa: {
@@ -264,10 +268,60 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
     window.open(`https://t.me/SmartStudentPerugiaBot?start=${actionId}`, '_blank');
   };
 
+  // نرخ زنده یورو
+  const [liveEurRate, setLiveEurRate] = useState<number>(304000);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/api/v1/webapp/currency`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data?.eur_toman && data.eur_toman > 50000) {
+          setLiveEurRate(data.eur_toman);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // چک‌لیست مراحل ورود دانشجو به پروجا
+  const ROADMAP_STEPS = [
+    { id: 'cf', title: 'دریافت کد مالیاتی (Codice Fiscale)', desc: 'مراجعه به اداره مالیات (Agenzia delle Entrate) در Via Mario Angeloni با اصل و کپی پاسپورت و ویزا (صدور در لحظه و رایگان)', badge: 'ضروری' },
+    { id: 'sim', title: 'خرید سیم‌کارت ایتالیایی', desc: 'تهیه سیم‌کارت از باجه‌های Iliad یا Fastweb در مراکز خرید (ماهانه حدود ۸ تا ۱۰ یورو)', badge: 'ارتباطات' },
+    { id: 'ins', title: 'بیمه درمانی دانشجویی', desc: 'خرید آنلاین بیمه دانشجویی WAI (Welcome Association Italy) به مبلغ ۱۲۰ یورو جهت الصاق به پرونده اقامت', badge: 'بیمه' },
+    { id: 'kit', title: 'دریافت کیت اقامت (Kit Giallo)', desc: 'تحویل پاکت پستی زرد‌رنگ به صورت رایگان از باجه‌های پست مرکزی (Poste Italiane در Piazza Matteotti)', badge: 'پرمسو' },
+    { id: 'post', title: 'ارسال کیت و دریافت رسید (Ricevuta)', desc: 'تکمیل فرم شماره ۱، الصاق تمبر ۱۶ یورویی مارکا دا بولو و دریافت رسید پستی دارای بارکد و تاریخ انگشت‌نگاری', badge: 'اقامت' },
+    { id: 'bank', title: 'افتتاح حساب بانکی دانشجویی', desc: 'افتتاح حساب آنلاین در Revolut، Buddybank یا Isybank با کد مالیاتی و رسید پرمسو جهت دریافت کمک‌هزینه بورسیه', badge: 'بانک' },
+    { id: 'quest', title: 'انگشت‌نگاری در اداره پلیس (Questura)', desc: 'مراجعه در تاریخ مقرر به اداره پلیس مهاجرت در Via del Tabacchificio با ۴ قطعه عکس، اصل پاسپورت و فیش‌ها', badge: 'پلیس' },
+    { id: 'adisu', title: 'تکمیل مدارک بورسیه و خوابگاه (ADiSU)', desc: 'ارائه برگه ISEE Parificato به دفتر بورسیه استانی ADiSU در Via Pascoli جهت تخصیص کمک‌هزینه و خوابگاه', badge: 'بورسیه' },
+  ];
+
+  const [completedSteps, setCompletedSteps] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('smart_perugia_roadmap');
+      return saved ? JSON.parse(saved) : ['cf'];
+    } catch {
+      return ['cf'];
+    }
+  });
+
+  const toggleStep = (stepId: string) => {
+    const next = completedSteps.includes(stepId)
+      ? completedSteps.filter((id) => id !== stepId)
+      : [...completedSteps, stepId];
+    setCompletedSteps(next);
+    try {
+      localStorage.setItem('smart_perugia_roadmap', JSON.stringify(next));
+    } catch (_) {}
+    const tg = (window as any).Telegram?.WebApp;
+    tg?.HapticFeedback?.impactOccurred('light');
+  };
+
   const handleItemClick = (id: string) => {
-    if (id === 'roommate') onNavigate?.(1);
-    else if (id === 'ai') onNavigate?.(2);
-    else if (id === 'weather') onNavigate?.(3);
+    if (id === 'isee') onNavigate?.(1);
+    else if (id === 'roommate') onNavigate?.(2);
+    else if (id === 'market') onNavigate?.(3);
+    else if (id === 'places') onNavigate?.(4);
+    else if (id === 'ai') onNavigate?.(5);
+    else if (id === 'weather') onNavigate?.(6);
     else {
       setActiveModal(id);
     }
@@ -407,6 +461,84 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
         </Box>
       </Box>
 
+      {/* Live Euro Exchange Rate Banner */}
+      <Box
+        onClick={() => onNavigate?.(1)}
+        sx={{
+          width: '100%',
+          maxWidth: 480,
+          mb: 3,
+          p: 2,
+          borderRadius: 4,
+          cursor: 'pointer',
+          background: 'linear-gradient(135deg, rgba(255, 215, 0, 0.12) 0%, rgba(7, 39, 35, 0.8) 100%)',
+          border: '1px solid rgba(255, 215, 0, 0.4)',
+          backdropFilter: 'blur(12px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          transition: 'all 0.25s ease',
+          '&:hover': {
+            borderColor: '#FFD700',
+            transform: 'translateY(-2px)',
+            boxShadow: '0 8px 24px rgba(255, 215, 0, 0.25)',
+          }
+        }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+          <Box
+            sx={{
+              width: 44,
+              height: 44,
+              borderRadius: 3,
+              background: 'linear-gradient(135deg, #FFD700 0%, #B8004F 100%)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 0 12px rgba(255, 215, 0, 0.4)',
+            }}
+          >
+            <Euro sx={{ fontSize: 26, color: '#031715' }} />
+          </Box>
+          <Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Typography variant="caption" sx={{ color: '#FFD700', fontWeight: 800 }}>
+                نرخ لحظه‌ای یورو (بازار آزاد)
+              </Typography>
+              <Chip
+                label="زنده"
+                size="small"
+                sx={{
+                  height: 18,
+                  fontSize: '0.62rem',
+                  fontWeight: 900,
+                  background: 'rgba(2, 195, 154, 0.25)',
+                  color: '#02C39A',
+                  border: '1px solid #02C39A'
+                }}
+              />
+            </Box>
+            <Typography variant="h6" sx={{ color: '#FFFFFF', fontWeight: 900, lineHeight: 1.2 }}>
+              {liveEurRate.toLocaleString('fa-IR')} <Typography component="span" sx={{ fontSize: '0.8rem', color: '#94D2BD' }}>تومان</Typography>
+            </Typography>
+          </Box>
+        </Box>
+        <ButtonBase
+          sx={{
+            px: 1.5,
+            py: 0.8,
+            borderRadius: 2.5,
+            background: 'linear-gradient(135deg, #00A896 0%, #02C39A 100%)',
+            color: '#031715',
+            fontWeight: 800,
+            fontSize: '0.75rem',
+            boxShadow: '0 4px 12px rgba(2, 195, 154, 0.3)',
+          }}
+        >
+          محاسبه ISEE
+        </ButtonBase>
+      </Box>
+
       {/* Section Title */}
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2.5, width: '100%', maxWidth: 480 }}>
         <Stars sx={{ color: '#FFD700', fontSize: 20 }} />
@@ -474,6 +606,115 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
             </motion.div>
           ))}
         </AnimatePresence>
+      </Box>
+
+      {/* Student Bureaucratic Roadmap Checklist */}
+      <Box sx={{ mt: 4, width: '100%', maxWidth: 480 }} dir={isRtl ? 'rtl' : 'ltr'}>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <CheckCircle sx={{ color: '#02C39A', fontSize: 22 }} />
+            <Typography variant="subtitle1" sx={{ fontWeight: 800, color: '#FFD700' }}>
+              چک‌لیست طلایی ورود به ایتالیا
+            </Typography>
+          </Box>
+          <Chip
+            label={`${completedSteps.length} از ${ROADMAP_STEPS.length} مرحله (${Math.round((completedSteps.length / ROADMAP_STEPS.length) * 100)}%)`}
+            size="small"
+            sx={{
+              background: 'rgba(0, 168, 150, 0.2)',
+              border: '1px solid #00A896',
+              color: '#02C39A',
+              fontWeight: 'bold',
+              fontSize: '0.7rem'
+            }}
+          />
+        </Box>
+
+        {/* Progress bar */}
+        <Box sx={{ width: '100%', mb: 2 }}>
+          <LinearProgress
+            variant="determinate"
+            value={(completedSteps.length / ROADMAP_STEPS.length) * 100}
+            sx={{
+              height: 8,
+              borderRadius: 4,
+              backgroundColor: 'rgba(255, 255, 255, 0.08)',
+              '& .MuiLinearProgress-bar': {
+                borderRadius: 4,
+                background: 'linear-gradient(90deg, #00A896 0%, #FFD700 100%)',
+              }
+            }}
+          />
+        </Box>
+
+        {/* Step Cards */}
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.2 }}>
+          {ROADMAP_STEPS.map((step) => {
+            const isDone = completedSteps.includes(step.id);
+            return (
+              <Box
+                key={step.id}
+                onClick={() => toggleStep(step.id)}
+                sx={{
+                  p: 1.5,
+                  borderRadius: 3,
+                  cursor: 'pointer',
+                  background: isDone
+                    ? 'rgba(7, 39, 35, 0.45)'
+                    : 'linear-gradient(145deg, rgba(7, 39, 35, 0.8) 0%, rgba(4, 25, 22, 0.9) 100%)',
+                  border: isDone
+                    ? '1px solid rgba(2, 195, 154, 0.4)'
+                    : '1px solid rgba(255, 215, 0, 0.15)',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 1.2,
+                  transition: 'all 0.2s ease',
+                  '&:hover': {
+                    borderColor: '#FFD700',
+                  }
+                }}
+              >
+                <Checkbox
+                  checked={isDone}
+                  sx={{
+                    p: 0,
+                    mt: 0.2,
+                    color: '#70A9A1',
+                    '&.Mui-checked': { color: '#02C39A' }
+                  }}
+                />
+                <Box sx={{ flex: 1 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.3 }}>
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        fontWeight: 700,
+                        color: isDone ? '#94D2BD' : '#FFFFFF',
+                        textDecoration: isDone ? 'line-through' : 'none'
+                      }}
+                    >
+                      {step.title}
+                    </Typography>
+                    <Chip
+                      label={step.badge}
+                      size="small"
+                      sx={{
+                        height: 18,
+                        fontSize: '0.62rem',
+                        background: 'rgba(184, 0, 79, 0.2)',
+                        border: '1px solid rgba(184, 0, 79, 0.4)',
+                        color: '#FF70A6'
+                      }}
+                    />
+                  </Box>
+                  <Typography variant="caption" sx={{ color: '#70A9A1', lineHeight: 1.4, display: 'block' }}>
+                    {step.desc}
+                  </Typography>
+                </Box>
+              </Box>
+            );
+          })}
+        </Box>
       </Box>
 
       {/* About Us Section - Royal Wirangaran Card */}

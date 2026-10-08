@@ -27,6 +27,7 @@ import {
   DoneAll
 } from '@mui/icons-material';
 import { motion } from 'framer-motion';
+import { API_BASE } from '../apiConfig';
 
 interface RoommateAd {
   id: string;
@@ -92,8 +93,18 @@ export default function RoommateView() {
   const [newTitle, setNewTitle] = useState('');
   const [newArea, setNewArea] = useState('Elce');
   const [newPrice, setNewPrice] = useState('');
-  const [newContact, setNewContact] = useState('');
-  const [newDesc, setNewDesc] = useState('');
+  const [newType, setNewType] = useState('اتاق تک‌نفره (Singola)');
+
+  useEffect(() => {
+    fetch(`${API_BASE}/api/v1/webapp/roommates`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.ads && data.ads.length > 0) {
+          setAds([...data.ads, ...initialAds]);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const areas = ['all', 'Elce', 'Centro Storico', 'Fontivegge', 'Monteluce', 'San Sisto'];
 
@@ -106,7 +117,7 @@ export default function RoommateView() {
     return matchesArea && matchesSearch;
   });
 
-  const handleAddAd = () => {
+  const handleAddAd = async () => {
     if (!newTitle.trim() || !newPrice.trim() || !newContact.trim()) {
       alert('لطفاً عنوان، قیمت و آیدی تلگرام را وارد کنید.');
       return;
@@ -117,13 +128,22 @@ export default function RoommateView() {
       title: newTitle.trim(),
       area: newArea,
       price: parseInt(newPrice) || 300,
-      type: 'آگهی جدید دانشجویی',
+      type: newType,
       amenities: ['wifi', 'washing'],
       contact: newContact.startsWith('@') ? newContact : `@${newContact}`,
       description: newDesc.trim() || 'اطلاعات بیشتر در چت تلگرام.'
     };
 
     setAds([created, ...ads]);
+
+    try {
+      await fetch(`${API_BASE}/api/v1/webapp/roommates`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(created)
+      });
+    } catch (_) {}
+
     setOpenModal(false);
     setNewTitle('');
     setNewPrice('');
