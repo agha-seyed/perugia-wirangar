@@ -9,73 +9,37 @@ from config import logger
 
 router = APIRouter(prefix="/api/v1/webapp", tags=["webapp"])
 
-# کَش درون‌حافظه‌ای نرخ یورو برای پرفورمنس بالا (۵ دقیقه)
-_CURRENCY_CACHE = {
-    "rate": 304000,
-    "source": "fallback",
-    "updated_at": 0
-}
+from services.currency_service import currency_service
 
 @router.get("/currency")
 async def get_live_currency():
     """
-    دریافت نرخ لحظه‌ای و زنده یورو به تومان برای مینی‌اپ
+    دریافت نرخ لحظه‌ای و زنده یورو و سایر ارزها به تومان برای مینی‌اپ
     بدون نیاز به احراز هویت برای بارگذاری سریع در فرانت‌اند
     """
-    import time
-    now = time.time()
-    
-    # اگر کش معتبر است (کمتر از ۵ دقیقه)
-    if _CURRENCY_CACHE["updated_at"] and (now - _CURRENCY_CACHE["updated_at"] < 300):
+    try:
+        data = await currency_service.get_all_rates()
+        eur = data.get("eur_toman", 304000)
         return {
-            "eur_toman": _CURRENCY_CACHE["rate"],
-            "source": _CURRENCY_CACHE["source"],
-            "formatted": f"{_CURRENCY_CACHE['rate']:,} تومان",
+            "eur_toman": eur,
+            "usd_toman": data.get("usd_toman", 268000),
+            "currencies": data.get("currencies", []),
+            "gold": data.get("gold", []),
+            "crypto": data.get("crypto", []),
+            "source": data.get("source", "brsapi"),
+            "source_name": data.get("source_name", "بازار آزاد"),
+            "formatted": f"{eur:,} تومان",
+            "updated_at": data.get("updated_at", "")
+        }
+    except Exception as e:
+        logger.error(f"Error in webapp currency endpoint: {e}")
+        return {
+            "eur_toman": 304000,
+            "usd_toman": 268000,
+            "source": "fallback",
+            "formatted": "304,000 تومان",
             "cached": True
         }
-
-    tgju_urls = [
-        "https://call4.tgju.org/ajax.json",
-        "https://call.tgju.org/ajax.json",
-        "https://call3.tgju.org/ajax.json",
-        "https://call2.tgju.org/ajax.json"
-    ]
-    
-    for url in tgju_urls:
-        try:
-            async with httpx.AsyncClient(timeout=2.5, headers={"User-Agent": "Mozilla/5.0"}) as client:
-                resp = await client.get(url)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    curr = data.get("current", {})
-                    eur_obj = curr.get("price_eur") or curr.get("sarafiroyal_eur_sell") or curr.get("sarafiyaran_eur_sell")
-                    if eur_obj:
-                        val_str = eur_obj.get("p", "") if isinstance(eur_obj, dict) else str(eur_obj)
-                        clean = re.sub(r"[^\d]", "", val_str)
-                        if clean:
-                            rial = int(clean)
-                            toman = rial // 10
-                            if toman > 50000:
-                                _CURRENCY_CACHE["rate"] = toman
-                                _CURRENCY_CACHE["source"] = "tgju_live"
-                                _CURRENCY_CACHE["updated_at"] = now
-                                return {
-                                    "eur_toman": toman,
-                                    "source": "tgju_live",
-                                    "formatted": f"{toman:,} تومان",
-                                    "cached": False
-                                }
-        except Exception as e:
-            logger.debug(f"TGJU fetch error: {e}")
-            continue
-
-    # در صورت عدم پاسخگویی، بازگشت مقدار معتبر روز بازار آزاد
-    return {
-        "eur_toman": _CURRENCY_CACHE["rate"] or 304000,
-        "source": _CURRENCY_CACHE["source"],
-        "formatted": f"{(_CURRENCY_CACHE['rate'] or 304000):,} تومان",
-        "cached": True
-    }
 
 
 @router.get("/places")

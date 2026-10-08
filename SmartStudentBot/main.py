@@ -85,6 +85,7 @@ def register_routers():
         ("handlers.dashboard_handler", "dashboard_router"),
         ("handlers.cost_handler", "cost_router"),
         ("handlers.pagopa_handler", "pagopa_router"),
+        ("handlers.currency_handler", "currency_router"),
     ]
     
     registered = 0

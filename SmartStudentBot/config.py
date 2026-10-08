@@ -129,6 +129,10 @@ class Settings:
     # Gemini API Key (هوش مصنوعی رایگان گوگل)
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "").strip()
     
+    # سامانه استعلام نرخ لحظه‌ای ارز و طلا (BrsApi)
+    BRSAPI_KEY: str = os.getenv("BRSAPI_KEY", "").strip()
+    BRSAPI_URL: str = os.getenv("BRSAPI_URL", "https://Api.BrsApi.ir/Market/Gold_Currency.php").strip()
+    
     # Redis (پشتیبانی از REDIS_URL، فرمت Upstash REST و افزودن خودکار اسکیما)
     @property
     def REDIS_URL(self) -> str:

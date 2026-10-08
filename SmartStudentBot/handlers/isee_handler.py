@@ -375,72 +375,28 @@ QUICK_MODE_STEPS = 3  # حالت سریع: درآمد، اعضا، املاک
 
 async def get_eur_rate() -> Tuple[int, bool]:
     """
-    دریافت نرخ یورو با سیستم کش TGJU + Fallback هوشمند
+    دریافت نرخ یورو از طریق currency_service (BrsApi + کلاستر TGJU + کشینگ هوشمند)
     
     Returns:
         Tuple[int, bool]: (نرخ یورو به تومان, آیا از منبع زنده است)
     """
-    global current_api_index
-    
-    # ابتدا چک کش
+    try:
+        from services.currency_service import currency_service
+        rate = await currency_service.get_eur_rate()
+        if rate and rate > 50000:
+            data_store.set_cached_rate(rate)
+            return rate, True
+    except Exception as e:
+        logger.warning(f"Error in isee_handler currency_service: {e}")
+
+    # در صورت عدم دسترسی موقت، بررسی کش
     cached = data_store.get_cached_rate()
     if cached:
         logger.debug(f"EUR rate from cache: {cached}")
         return cached, True
-    
-    # ۱. تلاش از منبع زنده TGJU (نرخ آزاد صرافی‌ها)
-    tgju_urls = [
-        "https://call4.tgju.org/ajax.json",
-        "https://call3.tgju.org/ajax.json",
-        "https://call.tgju.org/ajax.json"
-    ]
-    for url in tgju_urls:
-        try:
-            async with httpx.AsyncClient(timeout=2.5, headers={"User-Agent": "Mozilla/5.0"}) as client:
-                resp = await client.get(url)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    curr = data.get("current", {})
-                    eur_obj = curr.get("price_eur") or curr.get("sarafiyaran_eur_sell") or curr.get("sarafiroyal_eur_sell")
-                    if eur_obj:
-                        val_str = eur_obj.get("p", "") if isinstance(eur_obj, dict) else str(eur_obj)
-                        import re
-                        clean = re.sub(r"[^\d]", "", val_str)
-                        if clean:
-                            rial = int(clean)
-                            toman = rial // 10
-                            if toman > 50000:
-                                data_store.set_cached_rate(toman)
-                                logger.info(f"✅ EUR rate fetched from TGJU: {toman:,} Toman")
-                                return toman, True
-        except Exception:
-            continue
-    
-    # ۲. تلاش از Navasan API
-    for attempt in range(min(2, len(NAVASAN_API_KEYS))):
-        api_key = NAVASAN_API_KEYS[current_api_index]
-        current_api_index = (current_api_index + 1) % len(NAVASAN_API_KEYS)
-        
-        try:
-            async with httpx.AsyncClient(timeout=1.5) as client:
-                url = f"https://api.navasan.tech/latest/?api_key={api_key}"
-                response = await client.get(url)
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    eur_value = data.get("eur", {}).get("value")
-                    
-                    if eur_value:
-                        rate = int(float(eur_value))
-                        data_store.set_cached_rate(rate)
-                        logger.info(f"EUR rate fetched successfully: {rate}")
-                        return rate, True
-        except Exception:
-            pass
-    
-    # ۳. Fallback به نرخ معتبر بازار روز
-    fallback_rate = 304000
-    return fallback_rate, False
+
+    # نرخ پایه و معتبر بازار آزاد
+    return 304000, False
 
 
 # ═══════════════════════════════════════════════════════════════════

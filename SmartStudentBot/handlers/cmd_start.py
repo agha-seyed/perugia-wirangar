@@ -253,25 +253,25 @@ def get_main_menu(lang: dict, is_group: bool = False) -> InlineKeyboardMarkup:
             InlineKeyboardButton(text=t("weather", "🌤 آب‌وهوای پروجا"), callback_data="weather"),
             InlineKeyboardButton(text=t("news", "📰 اخبار دانشگاه UniPG"), callback_data="news"),
         ],
-        # ردیف ۲: مهم‌ترین خدمات پذیرش و بورسیه
+        # ردیف ۲: مهم‌ترین خدمات پذیرش و بورسیه و نرخ لحظه‌ای ارز
         [
             InlineKeyboardButton(text=t("isee", "🧮 محاسبه ISEE"), callback_data="isee"),
+            InlineKeyboardButton(text=t("currency", "💶 نرخ روز ارز و طلا"), callback_data="currency_rates"),
+        ],
+        # ردیف ۳: مشاوره تحصیلی و مسکن
+        [
             InlineKeyboardButton(text=t("consult", "💬 مشاوره تحصیلی"), callback_data="consult"),
-        ],
-        # ردیف ۳: مسکن و مکان‌های شهری
-        [
             InlineKeyboardButton(text=t("roommate", "🏠 هم‌خانه‌یابی و مسکن"), callback_data="roommate"),
+        ],
+        # ردیف ۴: خدمات دانشجویی و مکان‌ها
+        [
             InlineKeyboardButton(text=t("places", "📍 مکان‌های مهم پروجا"), callback_data="places"),
-        ],
-        # ردیف ۴: خدمات دانشجویی و راهنمای جامع
-        [
             InlineKeyboardButton(text=t("market", "🛒 بازارچه دست‌دوم"), callback_data="market"),
-            InlineKeyboardButton(text=t("guide", "📖 راهنمای زندگی و تحصیل"), callback_data="guide_main"),
         ],
-        # ردیف ۵: هوش مصنوعی و آموزش زبان
+        # ردیف ۵: راهنما و هوش مصنوعی
         [
+            InlineKeyboardButton(text=t("guide", "📖 راهنمای زندگی و تحصیل"), callback_data="guide_main"),
             InlineKeyboardButton(text=t("ai_chat", "🤖 دستیار هوشمند AI"), callback_data="ai_chat"),
-            InlineKeyboardButton(text=t("italy", "🇮🇹 یادگیری ایتالیایی"), callback_data="italy"),
         ],
         # ردیف ۶: داشبورد من و پشتیبانی
         [
@@ -335,6 +335,10 @@ async def route_start_action(message: Message, action: str, state: FSMContext = 
         elif action == "pagopa":
             from handlers.pagopa_handler import pagopa_command
             await pagopa_command(message)
+            return True
+        elif action in ("currency", "rates", "arz", "toman"):
+            from handlers.currency_handler import cmd_currency_rates
+            await cmd_currency_rates(message)
             return True
         elif action in ("cost", "costs"):
             from handlers.cost_handler import cmd_cost
