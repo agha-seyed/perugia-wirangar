@@ -15,7 +15,9 @@ import {
   TextField,
   IconButton,
   Checkbox,
-  LinearProgress
+  LinearProgress,
+  CircularProgress,
+  MenuItem
 } from '@mui/material';
 import {
   Cloud,
@@ -49,17 +51,20 @@ import {
   ConfirmationNumber,
   Map,
   Campaign,
-  SupportAgent
+  SupportAgent,
+  Send,
+  DoneAll
 } from '@mui/icons-material';
 import { motion, AnimatePresence } from 'framer-motion';
 import { API_BASE } from '../apiConfig';
+import GriffinLogo from './GriffinLogo';
 
 const translations = {
   fa: {
     title: "اسمارت پروجا",
     subtitle: "سامانه یکپارچه و هوشمند زندگی دانشجویی در ایتالیا",
     quickAccess: "دسترسی سریع به امکانات",
-    aboutUs: "توسعه‌یافته توسط گروه ویرانگران (Wirangaran)",
+    aboutUs: "توسعه‌یافته توسط گروه ویرانگران دانشجویان پروجا",
     aboutText: "پیشرو در طراحی سیستم‌های نوین، هوش مصنوعی و اتوماسیون دانشجویی. ما با ادغام نوآوری و هنر، تجربه زندگی دانشجویی در ایتالیا را متحول می‌سازیم.",
     menus: {
       weather: 'آب‌وهوا',
@@ -78,7 +83,7 @@ const translations = {
     title: "Smart Perugia",
     subtitle: "The Integrated Smart Platform for Student Life in Italy",
     quickAccess: "Quick Access",
-    aboutUs: "Developed by Wirangaran Group",
+    aboutUs: "Developed by Wirangaran Group of Perugia Students",
     aboutText: "Pioneering smart software, artificial intelligence and modern student automation. Bridging cutting-edge technology with seamless university life.",
     menus: {
       weather: 'Weather',
@@ -97,7 +102,7 @@ const translations = {
     title: "Smart Perugia",
     subtitle: "La Piattaforma Intelligente per la Vita Studentesca a Perugia",
     quickAccess: "Accesso Rapido",
-    aboutUs: "Sviluppato dal Gruppo Wirangaran",
+    aboutUs: "Sviluppato dal Gruppo Wirangaran Studenti di Perugia",
     aboutText: "Leader nella creazione di sistemi intelligenti, intelligenza artificiale e innovazione accademica.",
     menus: {
       weather: 'Meteo',
@@ -214,6 +219,15 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
   const [lang, setLang] = useState<LangKey>('fa');
   const [activeModal, setActiveModal] = useState<string | null>(null);
 
+  // فرم ثبت مشاوره و پشتیبانی مستقیم در مینی‌اپ
+  const [consultName, setConsultName] = useState('');
+  const [consultContact, setConsultContact] = useState('');
+  const [consultTopic, setConsultTopic] = useState('بورسیه استانی ADiSU و ISEE Parificato');
+  const [consultNotes, setConsultNotes] = useState('');
+  const [consultLoading, setConsultLoading] = useState(false);
+  const [consultSuccess, setConsultSuccess] = useState(false);
+  const [consultTrackingId, setConsultTrackingId] = useState('');
+
   // ISEE Calculator State
   const [familyMembers, setFamilyMembers] = useState<number>(4);
   const [annualIncome, setAnnualIncome] = useState<number>(8000);
@@ -266,6 +280,39 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
       }
     }
     window.open(`https://t.me/SmartStudentPerugiaBot?start=${actionId}`, '_blank');
+  };
+
+  const handleSubmitConsult = async () => {
+    if (!consultName.trim() || !consultContact.trim()) {
+      alert('لطفاً نام و آیدی تلگرام یا شماره تماس خود را وارد نمایید.');
+      return;
+    }
+    setConsultLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/webapp/consult`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: consultName.trim(),
+          contact: consultContact.trim(),
+          topic: consultTopic,
+          notes: consultNotes.trim()
+        })
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setConsultTrackingId(data.consult_id || `c_${Date.now()}`);
+        setConsultSuccess(true);
+        const tg = (window as any).Telegram?.WebApp;
+        tg?.HapticFeedback?.notificationOccurred('success');
+      } else {
+        alert(data.message || 'خطا در ثبت درخواست');
+      }
+    } catch (_) {
+      alert('خطا در برقراری ارتباط با سرور. لطفاً مجدداً تلاش کنید.');
+    } finally {
+      setConsultLoading(false);
+    }
   };
 
   // نرخ زنده یورو
@@ -356,47 +403,19 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
       </Box>
 
       {/* Hero Section: Grifo di Perugia with Teal, Crimson & Gold Glow */}
-      <Box sx={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', mb: 4 }}>
+      <Box sx={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', mb: 3.5 }}>
         
-        {/* Animated Royal Crest / Grifo Symbol */}
-        <Box sx={{ position: 'relative', width: 170, height: 170, mb: 2, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+        {/* Animated Royal Crest / Griffin of Perugia (شیر پرنده و نماد تاریخی شهر پروجا) */}
+        <Box sx={{ position: 'relative', width: 160, height: 160, mb: 1.5, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
           {/* Crimson & Peacock Ambient Aura */}
           <Box sx={{
-            position: 'absolute', width: 130, height: 130,
-            background: 'radial-gradient(circle, rgba(184,0,79,0.35) 0%, rgba(0,168,150,0.3) 60%, transparent 100%)',
+            position: 'absolute', width: 140, height: 140,
+            background: 'radial-gradient(circle, rgba(184,0,79,0.38) 0%, rgba(0,168,150,0.32) 60%, transparent 100%)',
             borderRadius: '50%',
             filter: 'blur(35px)',
             animation: 'royalPulse 3s infinite alternate'
           }} />
-          
-          <svg viewBox="0 0 100 100" width="100%" height="100%" style={{ filter: 'drop-shadow(0 0 12px rgba(255, 215, 0, 0.5))' }}>
-            <defs>
-              <linearGradient id="royalGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stopColor="#FFD700" />
-                <stop offset="45%" stopColor="#B8004F" />
-                <stop offset="100%" stopColor="#02C39A" />
-              </linearGradient>
-            </defs>
-            <motion.path
-              d="M 50 15 L 45 25 C 30 20 15 35 25 50 C 15 60 20 80 40 75 L 45 90 L 55 90 L 60 75 C 80 80 85 60 75 50 C 85 35 70 20 55 25 Z"
-              fill="rgba(7, 39, 35, 0.4)"
-              stroke="url(#royalGradient)"
-              strokeWidth="2.2"
-              initial={{ pathLength: 0, opacity: 0 }}
-              animate={{ pathLength: 1, opacity: 1 }}
-              transition={{ duration: 3.5, repeat: Infinity, repeatType: "reverse", ease: "easeInOut" }}
-            />
-            {/* Wing Details */}
-            <motion.path
-              d="M 40 40 Q 20 30 25 15 Q 40 25 50 35 M 60 40 Q 80 30 75 15 Q 60 25 50 35"
-              fill="none"
-              stroke="#FFD700"
-              strokeWidth="1.6"
-              initial={{ pathLength: 0 }}
-              animate={{ pathLength: 1 }}
-              transition={{ duration: 2.5, repeat: Infinity, repeatType: "reverse", ease: "easeInOut", delay: 0.8 }}
-            />
-          </svg>
+          <GriffinLogo size={145} showShield={true} animated={true} />
         </Box>
 
         <Box sx={{ zIndex: 2, textAlign: 'center', px: 2 }}>
@@ -649,28 +668,33 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 
         {/* Step Cards */}
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.2 }}>
-          {ROADMAP_STEPS.map((step) => {
+          {ROADMAP_STEPS.map((step, idx) => {
             const isDone = completedSteps.includes(step.id);
             return (
               <Box
                 key={step.id}
                 onClick={() => toggleStep(step.id)}
                 sx={{
-                  p: 1.5,
-                  borderRadius: 3,
+                  p: 1.6,
+                  borderRadius: 3.5,
                   cursor: 'pointer',
                   background: isDone
-                    ? 'rgba(7, 39, 35, 0.45)'
-                    : 'linear-gradient(145deg, rgba(7, 39, 35, 0.8) 0%, rgba(4, 25, 22, 0.9) 100%)',
+                    ? 'linear-gradient(145deg, rgba(2, 195, 154, 0.12) 0%, rgba(7, 39, 35, 0.6) 100%)'
+                    : 'linear-gradient(145deg, rgba(7, 39, 35, 0.85) 0%, rgba(4, 25, 22, 0.95) 100%)',
                   border: isDone
-                    ? '1px solid rgba(2, 195, 154, 0.4)'
-                    : '1px solid rgba(255, 215, 0, 0.15)',
+                    ? '1px solid rgba(2, 195, 154, 0.55)'
+                    : '1px solid rgba(255, 215, 0, 0.18)',
                   display: 'flex',
                   alignItems: 'flex-start',
                   gap: 1.2,
-                  transition: 'all 0.2s ease',
+                  boxShadow: isDone
+                    ? '0 4px 16px rgba(2, 195, 154, 0.15)'
+                    : '0 4px 14px rgba(0, 0, 0, 0.35)',
+                  transition: 'all 0.25s ease',
                   '&:hover': {
                     borderColor: '#FFD700',
+                    transform: 'translateY(-2px)',
+                    boxShadow: '0 6px 20px rgba(255, 215, 0, 0.2)'
                   }
                 }}
               >
@@ -684,30 +708,48 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                   }}
                 />
                 <Box sx={{ flex: 1 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.3 }}>
-                    <Typography
-                      variant="body2"
-                      sx={{
-                        fontWeight: 700,
-                        color: isDone ? '#94D2BD' : '#FFFFFF',
-                        textDecoration: isDone ? 'line-through' : 'none'
-                      }}
-                    >
-                      {step.title}
-                    </Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.4 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8 }}>
+                      <Box sx={{
+                        width: 20,
+                        height: 20,
+                        borderRadius: '50%',
+                        background: isDone ? 'rgba(2, 195, 154, 0.25)' : 'rgba(255, 215, 0, 0.15)',
+                        border: isDone ? '1px solid #02C39A' : '1px solid rgba(255, 215, 0, 0.4)',
+                        color: isDone ? '#02C39A' : '#FFD700',
+                        fontSize: '0.68rem',
+                        fontWeight: 900,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}>
+                        {idx + 1}
+                      </Box>
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          fontWeight: 800,
+                          color: isDone ? '#94D2BD' : '#FFFFFF',
+                          textDecoration: isDone ? 'line-through' : 'none'
+                        }}
+                      >
+                        {step.title}
+                      </Typography>
+                    </Box>
                     <Chip
                       label={step.badge}
                       size="small"
                       sx={{
-                        height: 18,
-                        fontSize: '0.62rem',
-                        background: 'rgba(184, 0, 79, 0.2)',
-                        border: '1px solid rgba(184, 0, 79, 0.4)',
-                        color: '#FF70A6'
+                        height: 20,
+                        fontSize: '0.65rem',
+                        fontWeight: 800,
+                        background: isDone ? 'rgba(2, 195, 154, 0.2)' : 'rgba(184, 0, 79, 0.25)',
+                        border: isDone ? '1px solid #02C39A' : '1px solid rgba(184, 0, 79, 0.4)',
+                        color: isDone ? '#02C39A' : '#FF70A6'
                       }}
                     />
                   </Box>
-                  <Typography variant="caption" sx={{ color: '#70A9A1', lineHeight: 1.4, display: 'block' }}>
+                  <Typography variant="caption" sx={{ color: isDone ? '#70A9A1' : '#B8C0BA', lineHeight: 1.5, display: 'block' }}>
                     {step.desc}
                   </Typography>
                 </Box>
@@ -754,31 +796,62 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
               {t.aboutText}
             </Typography>
 
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, justifyContent: 'center' }}>
-              <Chip
-                icon={<Code sx={{ fontSize: '1rem !important', color: '#02C39A !important' }} />}
-                label={t.skills[0]}
-                sx={{ color: '#F0FDF4', borderColor: 'rgba(0, 168, 150, 0.4)', background: 'rgba(0, 168, 150, 0.15)', fontSize: '0.75rem' }}
-                variant="outlined"
-              />
-              <Chip
-                icon={<AutoFixHigh sx={{ fontSize: '1rem !important', color: '#FFD700 !important' }} />}
-                label={t.skills[1]}
-                sx={{ color: '#F0FDF4', borderColor: 'rgba(255, 215, 0, 0.3)', background: 'rgba(255, 215, 0, 0.12)', fontSize: '0.75rem' }}
-                variant="outlined"
-              />
-              <Chip
-                icon={<Memory sx={{ fontSize: '1rem !important', color: '#B8004F !important' }} />}
-                label={t.skills[2]}
-                sx={{ color: '#F0FDF4', borderColor: 'rgba(184, 0, 79, 0.4)', background: 'rgba(184, 0, 79, 0.15)', fontSize: '0.75rem' }}
-                variant="outlined"
-              />
-              <Chip
-                icon={<School sx={{ fontSize: '1rem !important', color: '#00A896 !important' }} />}
-                label={t.skills[3]}
-                sx={{ color: '#F0FDF4', borderColor: 'rgba(0, 168, 150, 0.4)', background: 'rgba(0, 168, 150, 0.15)', fontSize: '0.75rem' }}
-                variant="outlined"
-              />
+            <Box sx={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(2, 1fr)',
+              gap: 1.5,
+              mt: 2
+            }}>
+              {[
+                { title: t.skills[0] || 'توسعه هوشمند', icon: <Code sx={{ fontSize: 22, color: '#02C39A' }} />, color: '#02C39A', border: 'rgba(2, 195, 154, 0.35)', bg: 'rgba(2, 195, 154, 0.1)' },
+                { title: t.skills[1] || 'الگوریتم‌های پیشرفته', icon: <AutoFixHigh sx={{ fontSize: 22, color: '#FFD700' }} />, color: '#FFD700', border: 'rgba(255, 215, 0, 0.35)', bg: 'rgba(255, 215, 0, 0.1)' },
+                { title: t.skills[2] || 'معماری مدرن', icon: <Memory sx={{ fontSize: 22, color: '#B8004F' }} />, color: '#FF70A6', border: 'rgba(184, 0, 79, 0.4)', bg: 'rgba(184, 0, 79, 0.12)' },
+                { title: t.skills[3] || 'پشتیبانی دانشجویی', icon: <SupportAgent sx={{ fontSize: 22, color: '#00A896' }} />, color: '#94D2BD', border: 'rgba(0, 168, 150, 0.4)', bg: 'rgba(0, 168, 150, 0.12)' }
+              ].map((card, idx) => (
+                <Box
+                  key={idx}
+                  sx={{
+                    p: 1.5,
+                    borderRadius: 3,
+                    background: card.bg,
+                    border: `1px solid ${card.border}`,
+                    backdropFilter: 'blur(10px)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1.2,
+                    boxShadow: '0 4px 14px rgba(0,0,0,0.3)',
+                    transition: 'all 0.25s ease',
+                    '&:hover': {
+                      transform: 'translateY(-3px)',
+                      borderColor: '#FFD700',
+                      boxShadow: `0 6px 18px ${card.color}33`,
+                    }
+                  }}
+                >
+                  <Box sx={{
+                    width: 38,
+                    height: 38,
+                    borderRadius: '12px',
+                    background: 'rgba(7, 39, 35, 0.85)',
+                    border: `1px solid ${card.border}`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                    boxShadow: `0 0 10px ${card.color}40`
+                  }}>
+                    {card.icon}
+                  </Box>
+                  <Typography variant="body2" sx={{
+                    color: '#FFFFFF',
+                    fontWeight: 800,
+                    fontSize: '0.76rem',
+                    textAlign: isRtl ? 'right' : 'left'
+                  }}>
+                    {card.title}
+                  </Typography>
+                </Box>
+              ))}
             </Box>
           </Box>
         </motion.div>
@@ -1271,7 +1344,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
       </Dialog>
 
       {/* ═══════════════════════════════════════════════════════════════════════════ */}
-      {/* 6. مودال مشاوره تخصصی */}
+      {/* 6. مودال تعاملی و ثبت رسمی مشاوره تخصصی */}
       {/* ═══════════════════════════════════════════════════════════════════════════ */}
       <Dialog
         open={activeModal === 'consult'}
@@ -1292,59 +1365,122 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
       >
         <DialogTitle sx={{ color: '#FFD700', fontWeight: 900, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span>{mt.consultTitle}</span>
-          <IconButton onClick={() => setActiveModal(null)} sx={{ color: '#94D2BD' }} size="small">
+          <IconButton onClick={() => { setActiveModal(null); setConsultSuccess(false); }} sx={{ color: '#94D2BD' }} size="small">
             <Close />
           </IconButton>
         </DialogTitle>
-        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, pt: 1 }}>
-          <Typography variant="body2" sx={{ color: '#94D2BD', fontSize: '0.82rem' }}>
-            {mt.consultDesc}
-          </Typography>
-
-          {[
-            { id: 1, title: '🎓 پذیرش دانشگاهی و پیش‌ثبت‌نام Universitaly', desc: 'بررسی مدارک تحصیلی، ترجمه، رزومه و مکاتبه با اساتید' },
-            { id: 2, title: '💶 مدارک بورسیه استانی ADiSU و ISEE Parificato', desc: 'راهنمای آماده‌سازی فیش حقوقی، مدارک دارایی و تایید کنسولگری' },
-            { id: 3, title: '🛂 ویزای تحصیلی و تمدید پرمسو (Permesso)', desc: 'تکمیل کیت زرد پستی، وقت انگشت‌نگاری و بیمه درمانی SSN' },
-            { id: 4, title: '🏠 قرارداد اجاره، کد مالیاتی و حساب بانکی', desc: 'اخذ Codice Fiscale، ثبت قرارداد در آژانس مالیاتی و کارت بانکی' }
-          ].map((item) => (
-            <Box
-              key={item.id}
-              sx={{
-                p: 1.5,
-                borderRadius: 2.5,
-                background: 'rgba(7, 39, 35, 0.6)',
-                border: '1px solid rgba(255, 215, 0, 0.15)',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 0.5
-              }}
-            >
-              <Typography variant="subtitle2" sx={{ color: '#FFFFFF', fontWeight: 800 }}>
-                {item.title}
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }} dir={isRtl ? 'rtl' : 'ltr'}>
+          {consultSuccess ? (
+            <Box sx={{ textAlign: 'center', py: 2 }}>
+              <DoneAll sx={{ fontSize: 60, color: '#02C39A', filter: 'drop-shadow(0 0 16px rgba(2, 195, 154, 0.6))', mb: 1 }} />
+              <Typography variant="h6" sx={{ color: '#FFD700', fontWeight: 900, mb: 1 }}>
+                درخواست مشاوره شما با موفقیت ثبت شد! 🎉
               </Typography>
-              <Typography variant="caption" sx={{ color: '#94D2BD', lineHeight: 1.5 }}>
-                {item.desc}
+              <Chip
+                label={`کد رهگیری: ${consultTrackingId}`}
+                sx={{
+                  background: 'rgba(255, 215, 0, 0.18)',
+                  border: '1px solid #FFD700',
+                  color: '#FFD700',
+                  fontWeight: 900,
+                  fontSize: '0.85rem',
+                  mb: 2,
+                  px: 1
+                }}
+              />
+              <Typography variant="body2" sx={{ color: '#94D2BD', lineHeight: 1.7, mb: 2.5 }}>
+                اطلاعات پرونده شما برای مشاوران ارشد دانشگاه پروجا ارسال شد. به زودی از طریق تلگرام با شما ارتباط برقرار خواهد شد.
               </Typography>
+              <Button
+                variant="outlined"
+                onClick={() => setConsultSuccess(false)}
+                sx={{ borderColor: '#02C39A', color: '#02C39A', fontWeight: 800 }}
+              >
+                ثبت درخواست جدید
+              </Button>
             </Box>
-          ))}
+          ) : (
+            <>
+              <Typography variant="body2" sx={{ color: '#94D2BD', fontSize: '0.82rem', lineHeight: 1.6 }}>
+                فرم زیر را تکمیل کنید تا مشاوران دانشجویی پروجا مستقیماً پرونده شما را بررسی کنند:
+              </Typography>
+
+              <TextField
+                label="نام و نام خانوادگی"
+                size="small"
+                fullWidth
+                value={consultName}
+                onChange={(e) => setConsultName(e.target.value)}
+                slotProps={{ inputLabel: { sx: { color: '#94D2BD' } } }}
+                sx={{ '& .MuiOutlinedInput-root': { color: '#fff', '& fieldset': { borderColor: 'rgba(0,168,150,0.4)' } } }}
+              />
+
+              <TextField
+                label="آیدی تلگرام یا شماره تماس (مثال: @username)"
+                size="small"
+                fullWidth
+                value={consultContact}
+                onChange={(e) => setConsultContact(e.target.value)}
+                slotProps={{ inputLabel: { sx: { color: '#94D2BD' } } }}
+                sx={{ '& .MuiOutlinedInput-root': { color: '#fff', '& fieldset': { borderColor: 'rgba(0,168,150,0.4)' } } }}
+              />
+
+              <TextField
+                select
+                label="موضوع مشاوره"
+                size="small"
+                fullWidth
+                value={consultTopic}
+                onChange={(e) => setConsultTopic(e.target.value)}
+                slotProps={{ inputLabel: { sx: { color: '#94D2BD' } } }}
+                sx={{ '& .MuiOutlinedInput-root': { color: '#fff', '& fieldset': { borderColor: 'rgba(0,168,150,0.4)' } } }}
+              >
+                {[
+                  'بورسیه استانی ADiSU و ISEE Parificato',
+                  'پذیرش دانشگاه UniPG و پیش‌ثبت‌نام Universitaly',
+                  'ویزای تحصیلی، کیت پستی و پرمسو (Permesso)',
+                  'قرارداد اجاره، کد مالیاتی و حساب بانکی',
+                  'رزرو خوابگاه، سلف و زندگی در پروجا',
+                  'مشاوره عمومی و اداری'
+                ].map((top) => (
+                  <MenuItem key={top} value={top}>{top}</MenuItem>
+                ))}
+              </TextField>
+
+              <TextField
+                label="توضیحات، رشته تحصیلی یا سوال شما"
+                multiline
+                rows={3}
+                size="small"
+                fullWidth
+                value={consultNotes}
+                onChange={(e) => setConsultNotes(e.target.value)}
+                slotProps={{ inputLabel: { sx: { color: '#94D2BD' } } }}
+                sx={{ '& .MuiOutlinedInput-root': { color: '#fff', '& fieldset': { borderColor: 'rgba(0,168,150,0.4)' } } }}
+              />
+            </>
+          )}
         </DialogContent>
         <DialogActions sx={{ p: 2, justifyContent: 'space-between' }}>
           <Button onClick={() => setActiveModal(null)} sx={{ color: '#94D2BD' }}>
             {mt.close}
           </Button>
-          <Button
-            variant="contained"
-            onClick={() => handleAction('consult')}
-            startIcon={<OpenInNew />}
-            sx={{
-              background: 'linear-gradient(135deg, #B8004F 0%, #6E002B 100%)',
-              color: '#FFD700',
-              fontWeight: 800,
-              border: '1px solid #FFD700'
-            }}
-          >
-            {mt.startConsultInBot}
-          </Button>
+          {!consultSuccess && (
+            <Button
+              variant="contained"
+              onClick={handleSubmitConsult}
+              disabled={consultLoading}
+              startIcon={consultLoading ? <CircularProgress size={18} color="inherit" /> : <Send />}
+              sx={{
+                background: 'linear-gradient(135deg, #B8004F 0%, #6E002B 100%)',
+                color: '#FFD700',
+                fontWeight: 800,
+                border: '1px solid #FFD700'
+              }}
+            >
+              {consultLoading ? 'در حال ثبت...' : '🚀 ثبت درخواست مشاوره'}
+            </Button>
+          )}
         </DialogActions>
       </Dialog>
 

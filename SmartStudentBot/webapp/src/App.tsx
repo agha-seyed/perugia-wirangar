@@ -31,6 +31,7 @@ import MarketView from './components/MarketView';
 import PlacesMapView from './components/PlacesMapView';
 import AIChatView from './components/AIChatView';
 import WeatherView from './components/WeatherView';
+import GriffinLogo from './components/GriffinLogo';
 
 export default function App() {
   // 0: خانه, 1: محاسبه ISEE, 2: هم‌اتاقی, 3: بازارچه, 4: نقشه پروجا, 5: هوش مصنوعی, 6: آب‌وهوا
@@ -54,6 +55,28 @@ export default function App() {
       console.warn('Telegram WebApp SDK not initialized:', e);
     }
   }, []);
+
+  // همگام‌سازی دکمه بازگشت نیتیو تلگرام
+  useEffect(() => {
+    try {
+      const tg = (window as any).Telegram?.WebApp;
+      if (tg?.BackButton) {
+        if (value !== 0) {
+          tg.BackButton.show();
+          const onNativeBack = () => {
+            triggerHaptic();
+            setValue(0);
+          };
+          tg.BackButton.onClick(onNativeBack);
+          return () => {
+            tg.BackButton.offClick(onNativeBack);
+          };
+        } else {
+          tg.BackButton.hide();
+        }
+      }
+    } catch (_) {}
+  }, [value]);
 
   const triggerHaptic = () => {
     try {
@@ -85,26 +108,12 @@ export default function App() {
           elevation={0}
         >
           <Toolbar sx={{ display: 'flex', justifyContent: 'space-between', px: 2, minHeight: '60px !important' }}>
-            {/* Logo & Title */}
+            {/* Logo & Title with Perugia Griffin */}
             <Box
               sx={{ display: 'flex', alignItems: 'center', gap: 1, cursor: 'pointer' }}
               onClick={() => { triggerHaptic(); setValue(0); }}
             >
-              <Box
-                sx={{
-                  width: 34,
-                  height: 34,
-                  borderRadius: '10px',
-                  background: 'linear-gradient(135deg, #00A896 0%, #B8004F 100%)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  boxShadow: '0 0 12px rgba(255, 215, 0, 0.4)',
-                  border: '1px solid #FFD700',
-                }}
-              >
-                <AutoAwesome sx={{ color: '#FFD700', fontSize: 20 }} />
-              </Box>
+              <GriffinLogo size={38} showShield={true} animated={false} />
               <Box>
                 <Typography
                   variant="subtitle1"
@@ -126,23 +135,24 @@ export default function App() {
             </Box>
 
             {/* Actions & Badges */}
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              {/* Back to Home if on AI or Weather */}
-              {value >= 5 && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8 }}>
+              {/* Back to Home if on ANY sub-tab */}
+              {value !== 0 && (
                 <ButtonBase
                   onClick={() => { triggerHaptic(); setValue(0); }}
                   sx={{
-                    px: 1.2,
-                    py: 0.4,
+                    px: 1.3,
+                    py: 0.45,
                     borderRadius: 2,
-                    background: 'rgba(255, 215, 0, 0.15)',
+                    background: 'linear-gradient(135deg, rgba(255, 215, 0, 0.22) 0%, rgba(184, 0, 79, 0.25) 100%)',
                     border: '1px solid #FFD700',
                     color: '#FFD700',
-                    fontSize: '0.75rem',
-                    fontWeight: 'bold',
+                    fontSize: '0.76rem',
+                    fontWeight: 800,
                     display: 'flex',
                     alignItems: 'center',
-                    gap: 0.5
+                    gap: 0.4,
+                    boxShadow: '0 0 10px rgba(255, 215, 0, 0.35)'
                   }}
                 >
                   <ArrowBack sx={{ fontSize: 16 }} />

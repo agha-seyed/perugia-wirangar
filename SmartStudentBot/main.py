@@ -193,8 +193,28 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.error(f"❌ Background startup error: {e}")
 
-    # شروع تسک پس‌زمینه
+    async def self_keep_alive():
+        """پینگ خودکار هر ۹ دقیقه برای بیدار نگه‌داشتن سرور Render و جلوگیری از Sleep شدن"""
+        await asyncio.sleep(45)
+        base_url = (getattr(settings, "BASE_URL", "") or "").rstrip("/")
+        if not base_url or "localhost" in base_url or "127.0.0.1" in base_url:
+            return
+        ping_url = f"{base_url}/ping"
+        logger.info(f"🔄 Self keep-alive worker initialized for: {ping_url}")
+        while True:
+            try:
+                import httpx
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    resp = await client.get(ping_url)
+                    if resp.status_code == 200:
+                        logger.debug("💓 Self keep-alive heartbeat sent successfully (200 OK)")
+            except Exception as e:
+                logger.debug(f"⚠️ Keep-alive heartbeat notice: {e}")
+            await asyncio.sleep(540)  # هر ۹ دقیقه پینگ می‌زند (سقف خواب رندر ۱۵ دقیقه است)
+
+    # شروع تسک‌های پس‌زمینه
     asyncio.create_task(init_background_services())
+    asyncio.create_task(self_keep_alive())
     
     yield
     

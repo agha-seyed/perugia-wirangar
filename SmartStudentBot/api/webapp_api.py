@@ -283,7 +283,30 @@ async def submit_consultation(payload: Dict[str, Any] = Body(...)):
         "status": "pending"
     }
     await db_manager.save_consult(consult_id, data)
-    return {"ok": True, "consult_id": consult_id, "message": "درخواست مشاوره ثبت شد"}
+
+    # اطلاع‌رسانی سریع به ادمین‌های بات در تلگرام
+    try:
+        from config import settings
+        from main import bot
+        admin_ids = settings.ADMIN_CHAT_IDS
+        admin_msg = (
+            f"🎓 <b>درخواست مشاوره تحصیلی و اداری جدید از مینی‌اپ!</b>\n\n"
+            f"👤 <b>نام و مشخصات:</b> {name}\n"
+            f"📌 <b>موضوع:</b> {topic}\n"
+            f"📱 <b>ارتباط:</b> <code>{contact}</code>\n"
+            f"📝 <b>توضیحات:</b> {notes or 'بدون توضیحات'}\n"
+            f"🆔 <b>کد رهگیری:</b> <code>{consult_id}</code>\n"
+            f"⏰ <b>زمان ثبت:</b> {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+        )
+        for aid in admin_ids:
+            try:
+                await bot.send_message(chat_id=aid, text=admin_msg, parse_mode="HTML")
+            except Exception:
+                pass
+    except Exception as e:
+        logger.debug(f"Admin notification notice: {e}")
+
+    return {"ok": True, "consult_id": consult_id, "message": "درخواست مشاوره شما با موفقیت ثبت شد و به مشاورین ارجاع گردید."}
 
 
 @router.post("/feedback")
