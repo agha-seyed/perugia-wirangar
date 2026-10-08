@@ -136,7 +136,10 @@ async def show_cost_of_living(event: types.Message | types.CallbackQuery):
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🧮 Calcolo ISEE per Agevolazioni", callback_data="isee")],
             [InlineKeyboardButton(text="🏠 Trova Alloggio & Coinquilino", callback_data="roommate")],
-            [InlineKeyboardButton(text="🔙 Torna al Menu Principale", callback_data="main_menu")]
+            [
+                InlineKeyboardButton(text="🔙 Torna alla Guida", callback_data="guide:main"),
+                InlineKeyboardButton(text="🏠 Menu Principale", callback_data="main_menu")
+            ]
         ])
     elif lang_code == "en":
         data = COST_DATA_EN
@@ -157,7 +160,10 @@ async def show_cost_of_living(event: types.Message | types.CallbackQuery):
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🧮 Calculate ISEE for Fee Waiver", callback_data="isee")],
             [InlineKeyboardButton(text="🏠 Find Roommates & Housing", callback_data="roommate")],
-            [InlineKeyboardButton(text="🔙 Back to Main Menu", callback_data="main_menu")]
+            [
+                InlineKeyboardButton(text="🔙 Back to Guide", callback_data="guide:main"),
+                InlineKeyboardButton(text="🏠 Main Menu", callback_data="main_menu")
+            ]
         ])
     else:
         data = COST_DATA_FA
@@ -178,7 +184,10 @@ async def show_cost_of_living(event: types.Message | types.CallbackQuery):
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🧮 محاسبه ISEE برای معافیت شهریه", callback_data="isee")],
             [InlineKeyboardButton(text="🏠 پیدا کردن هم‌اتاقی و اتاق", callback_data="roommate")],
-            [InlineKeyboardButton(text="🔙 بازگشت به منوی اصلی", callback_data="main_menu")]
+            [
+                InlineKeyboardButton(text="🔙 بازگشت به راهنما", callback_data="guide:main"),
+                InlineKeyboardButton(text="🏠 منوی اصلی", callback_data="main_menu")
+            ]
         ])
     
     if isinstance(event, types.CallbackQuery):

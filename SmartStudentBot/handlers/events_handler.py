@@ -49,6 +49,7 @@ async def show_events(event: types.Message | types.CallbackQuery):
                 InlineKeyboardButton(text="📤 Condividi", switch_inline_query="🎉 Eventi per studenti Perugia")
             ],
             [
+                InlineKeyboardButton(text="🔙 Torna alla Guida", callback_data="guide:main"),
                 InlineKeyboardButton(text="🏠 Menu Principale", callback_data="main_menu")
             ]
         ])
@@ -76,6 +77,7 @@ async def show_events(event: types.Message | types.CallbackQuery):
                 InlineKeyboardButton(text="📤 Share with Friends", switch_inline_query="🎉 Perugia Student Events")
             ],
             [
+                InlineKeyboardButton(text="🔙 Back to Guide", callback_data="guide:main"),
                 InlineKeyboardButton(text="🏠 Main Menu", callback_data="main_menu")
             ]
         ])
@@ -103,6 +105,7 @@ async def show_events(event: types.Message | types.CallbackQuery):
                 InlineKeyboardButton(text="📤 اشتراک با دوستان", switch_inline_query="🎉 رویدادهای دانشجویی پروجا")
             ],
             [
+                InlineKeyboardButton(text="🔙 بازگشت به راهنما", callback_data="guide:main"),
                 InlineKeyboardButton(text="🏠 منوی اصلی", callback_data="main_menu")
             ]
         ])

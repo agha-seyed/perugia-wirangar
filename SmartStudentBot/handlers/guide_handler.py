@@ -961,15 +961,18 @@ def get_guide_main_keyboard(lang_code: str = "fa") -> InlineKeyboardMarkup:
     if lang_code == "en":
         buttons.extend([
             [
-                InlineKeyboardButton(text="💰 Living Costs", callback_data="guide:costs"),
+                InlineKeyboardButton(text="💰 Living Costs & Budget", callback_data="cost_main"),
+                InlineKeyboardButton(text="🎉 Events & Tours", callback_data="events"),
+            ],
+            [
                 InlineKeyboardButton(text="📍 Locations", callback_data="guide:locations"),
-            ],
-            [
                 InlineKeyboardButton(text="📱 Essential Apps", callback_data="guide:apps"),
-                InlineKeyboardButton(text="💡 Golden Tips", callback_data="guide:tips"),
             ],
             [
+                InlineKeyboardButton(text="💡 Golden Tips", callback_data="guide:tips"),
                 InlineKeyboardButton(text="❓ FAQ", callback_data="guide:faq"),
+            ],
+            [
                 InlineKeyboardButton(text="🔍 Search Guide", callback_data="guide:search"),
             ],
             [
@@ -979,15 +982,18 @@ def get_guide_main_keyboard(lang_code: str = "fa") -> InlineKeyboardMarkup:
     elif lang_code == "it":
         buttons.extend([
             [
-                InlineKeyboardButton(text="💰 Costo della Vita", callback_data="guide:costs"),
+                InlineKeyboardButton(text="💰 Costo della Vita", callback_data="cost_main"),
+                InlineKeyboardButton(text="🎉 Eventi e Tour", callback_data="events"),
+            ],
+            [
                 InlineKeyboardButton(text="📍 Luoghi Importanti", callback_data="guide:locations"),
-            ],
-            [
                 InlineKeyboardButton(text="📱 App Utili", callback_data="guide:apps"),
-                InlineKeyboardButton(text="💡 Consigli Utili", callback_data="guide:tips"),
             ],
             [
+                InlineKeyboardButton(text="💡 Consigli Utili", callback_data="guide:tips"),
                 InlineKeyboardButton(text="❓ FAQ", callback_data="guide:faq"),
+            ],
+            [
                 InlineKeyboardButton(text="🔍 Cerca nella Guida", callback_data="guide:search"),
             ],
             [
@@ -997,15 +1003,18 @@ def get_guide_main_keyboard(lang_code: str = "fa") -> InlineKeyboardMarkup:
     else:
         buttons.extend([
             [
-                InlineKeyboardButton(text="💰 هزینه‌های زندگی", callback_data="guide:costs"),
-                InlineKeyboardButton(text="📍 لوکیشن‌ها", callback_data="guide:locations"),
+                InlineKeyboardButton(text="💰 برآورد مخارج پروجا", callback_data="cost_main"),
+                InlineKeyboardButton(text="🎉 رویدادها و تورها", callback_data="events"),
             ],
             [
+                InlineKeyboardButton(text="📍 لوکیشن‌ها و اماکن", callback_data="guide:locations"),
                 InlineKeyboardButton(text="📱 اپلیکیشن‌های ضروری", callback_data="guide:apps"),
-                InlineKeyboardButton(text="💡 نکات طلایی", callback_data="guide:tips"),
             ],
             [
+                InlineKeyboardButton(text="💡 نکات طلایی و هشدارها", callback_data="guide:tips"),
                 InlineKeyboardButton(text="❓ سوالات متداول", callback_data="guide:faq"),
+            ],
+            [
                 InlineKeyboardButton(text="🔍 جستجو در راهنما", callback_data="guide:search"),
             ],
             [

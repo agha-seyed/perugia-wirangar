@@ -248,44 +248,38 @@ def get_main_menu(lang: dict, is_group: bool = False) -> InlineKeyboardMarkup:
     buttons = [
         # ردیف طلایی: مینی‌اپلیکیشن تلگرام (Telegram Mini App)
         [webapp_button],
-        # ردیف ۱: مهم‌ترین خدمات پذیرش و بورسیه (اولویت اول دانشجو)
-        [
-            InlineKeyboardButton(text=t("isee", "🧮 محاسبه ISEE"), callback_data="isee"),
-            InlineKeyboardButton(text=t("consult", "💬 مشاوره تحصیلی"), callback_data="consult"),
-        ],
-        # ردیف ۲: مسکن و هزینه‌های زندگی
-        [
-            InlineKeyboardButton(text=t("roommate", "🏠 هم‌خانه‌یابی و مسکن"), callback_data="roommate"),
-            InlineKeyboardButton(text=t("costs", "💰 برآورد مخارج پروجا"), callback_data="cost_main"),
-        ],
-        # ردیف ۳: راهنما و مکان‌های شهری
-        [
-            InlineKeyboardButton(text=t("places", "📍 مکان‌های مهم پروجا"), callback_data="places"),
-            InlineKeyboardButton(text=t("guide", "📖 راهنمای زندگی و تحصیل"), callback_data="guide_main"),
-        ],
-        # ردیف ۴: خدمات دانشجویی (بازارچه و آموزش ایتالیایی)
-        [
-            InlineKeyboardButton(text=t("market", "🛒 بازارچه دست‌دوم"), callback_data="market"),
-            InlineKeyboardButton(text=t("italy", "🇮🇹 یادگیری ایتالیایی"), callback_data="italy"),
-        ],
-        # ردیف ۵: اخبار و آب‌وهوا
+        # ردیف ۱: اخبار و آب‌وهوا (اولویت اطلاعات روزمره و دانشگاه)
         [
             InlineKeyboardButton(text=t("weather", "🌤 آب‌وهوای پروجا"), callback_data="weather"),
             InlineKeyboardButton(text=t("news", "📰 اخبار دانشگاه UniPG"), callback_data="news"),
         ],
-        # ردیف ۶: هوش مصنوعی و ترجمه
+        # ردیف ۲: مهم‌ترین خدمات پذیرش و بورسیه
+        [
+            InlineKeyboardButton(text=t("isee", "🧮 محاسبه ISEE"), callback_data="isee"),
+            InlineKeyboardButton(text=t("consult", "💬 مشاوره تحصیلی"), callback_data="consult"),
+        ],
+        # ردیف ۳: مسکن و مکان‌های شهری
+        [
+            InlineKeyboardButton(text=t("roommate", "🏠 هم‌خانه‌یابی و مسکن"), callback_data="roommate"),
+            InlineKeyboardButton(text=t("places", "📍 مکان‌های مهم پروجا"), callback_data="places"),
+        ],
+        # ردیف ۴: خدمات دانشجویی و راهنمای جامع
+        [
+            InlineKeyboardButton(text=t("market", "🛒 بازارچه دست‌دوم"), callback_data="market"),
+            InlineKeyboardButton(text=t("guide", "📖 راهنمای زندگی و تحصیل"), callback_data="guide_main"),
+        ],
+        # ردیف ۵: هوش مصنوعی و آموزش زبان
         [
             InlineKeyboardButton(text=t("ai_chat", "🤖 دستیار هوشمند AI"), callback_data="ai_chat"),
-            InlineKeyboardButton(text=t("translate", "🌐 ترجمه تخصصی متن"), callback_data="ai:translate_menu"),
+            InlineKeyboardButton(text=t("italy", "🇮🇹 یادگیری ایتالیایی"), callback_data="italy"),
         ],
-        # ردیف ۷: رویدادها و داشبورد روزانه
+        # ردیف ۶: داشبورد من و پشتیبانی
         [
             InlineKeyboardButton(text=t("today", "📅 داشبورد من"), callback_data="today"),
-            InlineKeyboardButton(text=t("events", "🎉 رویدادها و تورها"), callback_data="events"),
-        ],
-        # ردیف ۸: پشتیبانی و تغییر زبان
-        [
             InlineKeyboardButton(text=t("feedback", "📝 پشتیبانی و بازخورد"), callback_data="feedback"),
+        ],
+        # ردیف ۷: تغییر زبان
+        [
             InlineKeyboardButton(text=t("language", "🌍 تغییر زبان (Language)"), callback_data="change_lang"),
         ]
     ]
