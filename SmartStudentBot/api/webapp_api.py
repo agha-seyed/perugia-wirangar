@@ -327,3 +327,41 @@ async def submit_feedback(payload: Dict[str, Any] = Body(...)):
     }
     await db_manager.save_ticket(ticket_id, data)
     return {"ok": True, "ticket_id": ticket_id, "message": "بازخورد شما دریافت شد"}
+
+
+@router.post("/ai/chat")
+async def webapp_ai_chat(payload: Dict[str, Any] = Body(...)):
+    """
+    ارسال پیام به مدل هوش مصنوعی Atria ASI برای وب‌اپلیکیشن مینی‌اپ
+    """
+    message = payload.get("message", "").strip()
+    user_id = payload.get("user_id", 0)
+    history = payload.get("history", [])
+
+    if not message:
+        raise HTTPException(status_code=400, detail="متن پیام خالی است.")
+
+    try:
+        from services.ai_service import ai_service
+        res = await ai_service.chat(
+            message=message,
+            user_id=int(user_id) if str(user_id).isdigit() else 0,
+            context="student_assistant",
+            history=history,
+            lang_code="fa"
+        )
+        return {
+            "success": True,
+            "text": res.text,
+            "model": res.model_used or "Atria-Dawn-Preview",
+            "provider": res.provider or "Atria ASI",
+            "time_ms": res.processing_time_ms,
+            "is_ai_generated": res.is_ai_generated
+        }
+    except Exception as e:
+        logger.error(f"WebApp AI Chat Exception: {e}")
+        return {
+            "success": False,
+            "text": "متاسفانه ارتباط با هوش مصنوعی برقرار نشد.",
+            "error": str(e)
+        }

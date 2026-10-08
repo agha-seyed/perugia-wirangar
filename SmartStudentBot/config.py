@@ -126,8 +126,13 @@ class Settings:
             or "smart_student_bot"
         ).strip().strip('"').strip("'")
     
-    # Gemini API Key (هوش مصنوعی رایگان گوگل)
+    # Gemini API Key (هوش مصنوعی گوگل - پشتیبان)
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "").strip()
+    
+    # Atria ASI (هوش مصنوعی با ۱۰۰ میلیون توکن)
+    ATRIA_API_KEY: str = os.getenv("ATRIA_API_KEY", "").strip()
+    ATRIA_BASE_URL: str = os.getenv("ATRIA_BASE_URL", "https://api.atria-asi.ai/v1").strip().rstrip("/")
+    ATRIA_MODEL: str = os.getenv("ATRIA_MODEL", "Atria-Dawn-Preview").strip()
     
     # سامانه استعلام نرخ لحظه‌ای ارز و طلا (BrsApi)
     BRSAPI_KEY: str = os.getenv("BRSAPI_KEY", "").strip()
@@ -241,7 +246,7 @@ class Settings:
     @property
     def AI_DEFAULT_MODEL(self) -> str:
         """مدل پیش‌فرض AI"""
-        return os.getenv("AI_DEFAULT_MODEL", "gpt-4o-mini")
+        return os.getenv("AI_DEFAULT_MODEL", "Atria-Dawn-Preview")
     
     @property
     def AI_TIMEOUT_SECONDS(self) -> int:

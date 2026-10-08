@@ -29,7 +29,7 @@ export default function AIChatView() {
     'نحوه افتتاح حساب بانکی در ایتالیا؟'
   ];
 
-  const handleSend = (textToSend?: string) => {
+  const handleSend = async (textToSend?: string) => {
     const query = textToSend || input;
     if (!query.trim()) return;
 
@@ -44,34 +44,66 @@ export default function AIChatView() {
     setInput('');
     setLoading(true);
 
-    // پاسخ هوشمند و بر اساس تجارب مستند دانشجویان
-    setTimeout(() => {
-      let reply = '';
-      const q = query.toLowerCase();
+    try {
+      // Build history for backend AI
+      const historyPayload = messages.slice(-6).map((m) => ({
+        role: m.sender === 'user' ? 'user' : 'assistant',
+        content: m.text
+      }));
 
-      if (q.includes('بورسیه') || q.includes('adisu')) {
-        reply = '💶 **بورسیه استانی ADiSU Umbria:**\n• مبلغ سالانه: تا حدود ۷,۰۰۰ یورو وجه نقد\n• خوابگاه رایگان دولتی در پروجا\n• روزانه ۲ وعده غذای گرم و رایگان در رستوران‌های Mensa\n• شرط مالی: عدد ISEE Parificato کمتر از ۲۵,۵۰۰ یورو\n• نکته: ثبت‌نام معمولاً از تیرماه (Luglio) آغاز می‌شود.';
-      } else if (q.includes('کدیچه') || q.includes('codice')) {
-        reply = '🏛 **کد مالیاتی (Codice Fiscale):**\n• برای اجاره خانه، سیم‌کارت و افتتاح حساب ضروری است.\n• مکان در پروجا: اداره Agenzia delle Entrate در خیابان Via Mario Angeloni\n• مدارک: اصل پاسپورت + کپی صفحه اول و ویزا\n• هزینه: کاملاً رایگان و صدور در همان لحظه!';
-      } else if (q.includes('پرمسو') || q.includes('اقامت') || q.includes('soggiorno')) {
-        reply = '🛂 **پرمسو دی سوجورنو (Permesso di Soggiorno):**\n• مهلت: ظرف حداکثر ۸ روز کاری پس از ورود به خاک ایتالیا\n• دریافت کیت پستی زرد (Kit Postale) از باجه‌های Poste Italiane (پست مرکزی در میدان Piazza Matteotti یا Fontivegge)\n• مدارک: کپی پاسپورت، کپی بیمه، کپی گواهی ثبت‌نام یا پذیرش دانشگاه، تمبر مارکا دا بولو ۱۶ یورویی.';
-      } else if (q.includes('سلف') || q.includes('mensa')) {
-        reply = '🍝 **سلف‌های غذاخوری (Mensa Universitari):**\n۱. سلف مرکزی Via Pascoli (نزدیک مرکز تاریخی و خوابگاه‌های اصلی)\n۲. سلف مهندسی در منطقه Ingegneria / San Sisto\n• برای بورسیه‌ها کاملاً رایگان است و منوی روزانه شامل پاستا، گوشت، سالاد و دسر تازه ایتالیایی است.';
-      } else if (q.includes('بانک') || q.includes('حساب')) {
-        reply = '💳 **افتتاح حساب بانکی:**\nدانشجویان پروجا معمولاً از کارت‌های زیر استفاده می‌کنند:\n• کارت Revolut یا N26 (آنلاین و فوری)\n• حساب PostePay Evolution در اداره پست\n• حساب دانشجویی بانک Intesa Sanpaolo (رایگان تا سن ۳۵ سالگی).';
-      } else {
-        reply = `پاسخ به سوال «${query}»:\nدانشگاه دولتی پروجا (UniPG) با بیش از ۷۰۰ سال قدمت، خدمات کاملی به دانشجویان بین‌المللی ارائه می‌دهد. برای جزئیات پرونده اختصاصی، می‌توانید از منوی هوش مصنوعی و دکمه مشاوره ربات تلگرام نیز استفاده نمایید.`;
+      const response = await fetch('/api/v1/webapp/ai/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: query,
+          history: historyPayload
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data && data.text) {
+          const aiMsg: ChatMessage = {
+            id: (Date.now() + 1).toString(),
+            sender: 'ai',
+            text: data.text,
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          };
+          setMessages((prev) => [...prev, aiMsg]);
+          setLoading(false);
+          return;
+        }
       }
+    } catch (err) {
+      console.warn('Backend AI API fallback:', err);
+    }
 
-      const aiMsg: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        sender: 'ai',
-        text: reply,
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      };
-      setMessages((prev) => [...prev, aiMsg]);
-      setLoading(false);
-    }, 900);
+    // پاسخ هوشمند پشتیبان در صورت آفلاین بودن
+    let reply = '';
+    const q = query.toLowerCase();
+
+    if (q.includes('بورسیه') || q.includes('adisu')) {
+      reply = '💶 **بورسیه استانی ADiSU Umbria:**\n• مبلغ سالانه: تا حدود ۷,۰۰۰ یورو وجه نقد\n• خوابگاه رایگان دولتی در پروجا\n• روزانه ۲ وعده غذای گرم و رایگان در رستوران‌های Mensa\n• شرط مالی: عدد ISEE Parificato کمتر از ۲۵,۵۰۰ یورو\n• نکته: ثبت‌نام معمولاً از تیرماه (Luglio) آغاز می‌شود.';
+    } else if (q.includes('کدیچه') || q.includes('codice')) {
+      reply = '🏛 **کد مالیاتی (Codice Fiscale):**\n• برای اجاره خانه، سیم‌کارت و افتتاح حساب ضروری است.\n• مکان در پروجا: اداره Agenzia delle Entrate در خیابان Via Mario Angeloni\n• مدارک: اصل پاسپورت + کپی صفحه اول و ویزا\n• هزینه: کاملاً رایگان و صدور در همان لحظه!';
+    } else if (q.includes('پرمسو') || q.includes('اقامت') || q.includes('soggiorno')) {
+      reply = '🛂 **پرمسو دی سوجورنو (Permesso di Soggiorno):**\n• مهلت: ظرف حداکثر ۸ روز کاری پس از ورود به خاک ایتالیا\n• دریافت کیت پستی زرد (Kit Postale) از باجه‌های Poste Italiane (پست مرکزی در میدان Piazza Matteotti یا Fontivegge)\n• مدارک: کپی پاسپورت، کپی بیمه، کپی گواهی ثبت‌نام یا پذیرش دانشگاه، تمبر مارکا دا بولو ۱۶ یورویی.';
+    } else if (q.includes('سلف') || q.includes('mensa')) {
+      reply = '🍝 **سلف‌های غذاخوری (Mensa Universitari):**\n۱. سلف مرکزی Via Pascoli (نزدیک مرکز تاریخی و خوابگاه‌های اصلی)\n۲. سلف مهندسی در منطقه Ingegneria / San Sisto\n• برای بورسیه‌ها کاملاً رایگان است و منوی روزانه شامل پاستا، گوشت، سالاد و دسر تازه ایتالیایی است.';
+    } else if (q.includes('بانک') || q.includes('حساب')) {
+      reply = '💳 **افتتاح حساب بانکی:**\nدانشجویان پروجا معمولاً از کارت‌های زیر استفاده می‌کنند:\n• کارت Revolut یا N26 (آنلاین و فوری)\n• حساب PostePay Evolution در اداره پست\n• حساب دانشجویی بانک Intesa Sanpaolo (رایگان تا سن ۳۵ سالگی).';
+    } else {
+      reply = `پاسخ به سوال «${query}»:\nدانشگاه دولتی پروجا (UniPG) با بیش از ۷۰۰ سال قدمت، خدمات کاملی به دانشجویان بین‌المللی ارائه می‌دهد. برای جزئیات پرونده اختصاصی، می‌توانید از منوی هوش مصنوعی و دکمه مشاوره ربات تلگرام نیز استفاده نمایید.`;
+    }
+
+    const aiMsg: ChatMessage = {
+      id: (Date.now() + 1).toString(),
+      sender: 'ai',
+      text: reply,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+    setMessages((prev) => [...prev, aiMsg]);
+    setLoading(false);
   };
 
   return (
