@@ -200,6 +200,14 @@ _user_model_last_activity: Dict[int, datetime] = {}
 
 # اطلاعات نمایشی مدل‌ها
 USER_SELECTABLE_MODELS: Dict[str, Dict[str, Any]] = {
+    "Atria-Dawn-Preview": {
+        "icon": "🦁",
+        "name": "هوش مصنوعی ویرانگران (اختصاصی)",
+        "description": "مدل اختصاصی و رسمی جامعه ویرانگران - هوشمند و فوق‌العاده سریع",
+        "provider": "ویرانگران (Wirangar)",
+        "supports_vision": True,
+        "supports_audio": False,
+    },
     "gpt-4o-mini": {
         "icon": "⚡",
         "name": "GPT-4o Mini",
@@ -1021,9 +1029,8 @@ MESSAGES: Dict[str, Dict[str, Any]] = {
         
         # خوشامدگویی
         "greeting": [
-            "سلام! 👋 چطور می‌تونم کمکت کنم؟",
-            "سلام دوست عزیز! 🌟 سوالت رو بپرس!",
-            "هی! 😊 آماده‌ام کمکت کنم.",
+            "سلام! 👋 من <b>هوش مصنوعی ویرانگران</b> هستم.\nآماده‌ام در تمام زمینه‌های دانشگاه پروجا، بورسیه استانی ADiSU، امور اقامتی، زبان ایتالیایی یا هر سوال دیگری کمکت کنم. چطور می‌تونم بهت کمک کنم؟",
+            "درود! 🌟 من <b>هوش مصنوعی ویرانگران</b> هستم.\nدستیار هوشمند و اختصاصی شما. هر سوال یا کاری داری بفرما تا با کمال میل راهنماییت کنم!",
         ],
         
         # خطا
@@ -1045,8 +1052,8 @@ MESSAGES: Dict[str, Dict[str, Any]] = {
         "no_access": "⛔ دسترسی ندارید!",
         
         # منو
-        "menu_title": "🤖 <b>دستیار هوشمند پروجا</b>",
-        "chat_title": "💬 <b>چت با دستیار هوشمند</b>",
+        "menu_title": "🤖 <b>هوش مصنوعی ویرانگران</b> (Wirangar AI)",
+        "chat_title": "💬 <b>گفتگو با هوش مصنوعی ویرانگران</b>",
         "translate_title": "🌐 <b>ترجمه هوشمند</b>",
         "italian_title": "🇮🇹 <b>کمک یادگیری ایتالیایی</b>",
         "stats_title": "📊 <b>وضعیت سرویس AI</b>",
@@ -3839,10 +3846,10 @@ async def on_startup() -> None:
     
     # Warm-up اولیه
     if WARMUP_ENABLED and AI_SERVICE_AVAILABLE:
-        if not getattr(settings, "GEMINI_API_KEY", None) and not os.getenv("GOOGLE_API_KEY"):
-            logger.info("ℹ️ AI warmup skipped: GEMINI_API_KEY not configured")
+        if not getattr(settings, "ATRIA_API_KEY", None) and not getattr(settings, "GEMINI_API_KEY", None):
+            logger.info("ℹ️ AI warmup skipped: ATRIA_API_KEY not configured")
         else:
-            logger.info("🔥 Performing initial warmup...")
+            logger.info("🔥 Performing initial warmup for Wirangar AI...")
             try:
                 success = await service_manager.warmup(force=True)
                 if success:

@@ -485,8 +485,8 @@ def validate_settings() -> bool:
         critical_missing.append("WEBHOOK_SECRET (required for production)")
     
     # بررسی‌های هشداری
-    if not settings.OPENROUTER_API_KEY:
-        warnings.append("OPENROUTER_API_KEY - AI features will use fallback mode")
+    if not settings.ATRIA_API_KEY and not settings.OPENROUTER_API_KEY:
+        warnings.append("ATRIA_API_KEY - AI features will use fallback mode")
     
     if not settings.ADMIN_CHAT_IDS:
         warnings.append("ADMIN_CHAT_IDS - No admins configured")

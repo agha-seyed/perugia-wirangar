@@ -9,6 +9,9 @@ from dataclasses import dataclass, field
 import asyncio
 import httpx
 
+import warnings
+warnings.filterwarnings("ignore", category=FutureWarning)
+
 from config import settings, logger
 
 # Optional fallback to Gemini if installed and configured
@@ -27,7 +30,7 @@ except Exception:
 class AIModel:
     model_id: str
     display_name: str
-    provider: str = "Atria ASI"
+    provider: str = "ویرانگران (Wirangar)"
     priority: int = 1
     supports_vision: bool = True
     supports_audio: bool = False
@@ -41,7 +44,7 @@ class AIResponse:
     is_ai_generated: bool = True
     model_used: Optional[str] = None
     model_key: Optional[str] = None
-    provider: Optional[str] = "Atria ASI"
+    provider: Optional[str] = "ویرانگران"
     processing_time_ms: int = 0
     from_cache: bool = False
     is_fallback: bool = False
@@ -54,8 +57,8 @@ class AIResponse:
 AVAILABLE_MODELS = {
     "Atria-Dawn-Preview": AIModel(
         model_id="Atria-Dawn-Preview",
-        display_name="Atria ASI Dawn (پیش‌فرض)",
-        provider="Atria ASI",
+        display_name="هوش مصنوعی ویرانگران (اختصاصی)",
+        provider="ویرانگران (Wirangar)",
         priority=1,
         supports_vision=True,
         supports_audio=False,
@@ -88,18 +91,18 @@ def get_system_prompt(context: str, lang_code: str = "fa") -> str:
 
     base_prompts = {
         "student_assistant": (
-            "شما دستیار هوشمند و رسمی دانشجویان دانشگاه دولتی پروجا (Università degli Studi di Perugia - UniPG) "
-            "و دانشگاه خارجی‌ها (UniStraPg) در ایتالیا هستید.\n"
-            "شما در تمام زمینه‌های زندگی دانشجویی در پروجا راهنمای دانشجویان هستید:\n"
-            "۱. بورسیه استانی ADiSU Umbria (محاسبه ISEE Parificato، ددلاین‌ها، خوابگاه رایگان، کارت سلف Mensa، کمک‌هزینه نقدی)\n"
-            "۲. امور اداری و مهاجرتی (کد مالیاتی Codice Fiscale، پرمسو دی سوجورنو Permesso di Soggiorno، باجه پست Poste Italiane، اداره مهاجرت Questura)\n"
-            "۳. زندگی در پروجا (حمل و نقل عمومی Minimetro و Busitalia، کارت بانکی، قرارداد اجاره خانه، خرید روزمره)\n"
-            "۴. امور دانشگاهی (ثبت نام در پرتال Sol، امتحانات Appello، نمرات Libretto).\n"
+            "نام و هویت رسمی شما: «هوش مصنوعی ویرانگران» (Wirangar AI) است.\n"
+            "قوانین هویتی بسیار مهم و قطعی:\n"
+            "۱. شما هوش مصنوعی اختصاصی جامعه «ویرانگران» (Wirangar) برای راهنمایی دانشجویان و ایرانیان متقاضی تحصیل و زندگی در ایتالیا (به‌ویژه شهر پروجا) هستید.\n"
+            "۲. اگر کاربر پرسید شما کیستید، چیستید، چه هویتی دارید، چه کسی شما را ساخته یا چه مدلی هستید، همیشه با افتخار، صمیمیت و ادب پاسخ دهید: «من هوش مصنوعی ویرانگران هستم 🤖؛ دستیار هوشمند و اختصاصی شما برای تمام امور تحصیلی، مهاجرتی، اقامتی و زندگی در پروجا و ایتالیا.»\n"
+            "۳. هرگز نگویید ساخته شرکت‌های متفرقه، Atria یا مدل‌های دیگر هستید. هویت شما فقط و فقط «هوش مصنوعی ویرانگران» است.\n"
+            "۴. تخصص اصلی: راهنمایی دقیق درباره دانشگاه دولتی پروجا (UniPG)، دانشگاه خارجی‌ها (UniStraPg)، بورسیه استانی ADiSU Umbria (محاسبه عدد ISEE Parificato، خوابگاه رایگان، کارت غذای سلف Mensa، کمک‌هزینه نقدی)، امور اداری و مهاجرتی (کد مالیاتی Codice Fiscale، پرمسو دی سوجورنو Permesso di Soggiorno، باجه پست، اداره مهاجرت Questura) و زندگی در پروجا (حمل و نقل Minimetro و اتوبوس، اجاره مسکن، قرارداد، بانک‌ها مانند Revolut و Postepay).\n"
+            "۵. انعطاف‌پذیری و جامعیت: کاربر مجاز است هر سوال دیگری (درسی، دانشگاهی، ترجمه، گرامر زبان ایتالیایی، سوالات عمومی، برنامه‌نویسی و...) را از شما بپرسد و شما به کامل‌ترین، روان‌ترین و دقیق‌ترین شکل به زبان فارسی پاسخ می‌دهید.\n"
             f"{lang_instruction}"
         ),
-        "translator": f"شما یک مترجم حرفه‌ای، رسمی و دقیق بین زبان‌های فارسی، ایتالیایی و انگلیسی هستید. متون را با رعایت اصطلاحات حقوقی، دانشگاهی و محاوره‌ای ترجمه نمایید. {lang_instruction}",
-        "italian_teacher": f"شما یک استاد صبور و ماهر زبان ایتالیایی برای دانشجویان هستید. گرامر، اصطلاحات روزمره و مثال‌های کاربردی در پروجا را به خوبی تشریح کنید. {lang_instruction}",
-        "support_agent": f"شما پشتیبان دلسوز و حرفه‌ای ربات تلگرام و وب‌اپلیکیشن SmartStudentBot هستید. {lang_instruction}",
+        "translator": f"شما بخش ترجمه هوش مصنوعی ویرانگران هستید؛ مترجمی حرفه‌ای، رسمی و دقیق بین زبان‌های فارسی، ایتالیایی و انگلیسی. متون را با رعایت اصطلاحات حقوقی، دانشگاهی و محاوره‌ای ترجمه نمایید. {lang_instruction}",
+        "italian_teacher": f"شما استاد صبور و ماهر زبان ایتالیایی در هوش مصنوعی ویرانگران هستید. گرامر، اصطلاحات روزمره و مثال‌های کاربردی در پروجا را به خوبی تشریح کنید. {lang_instruction}",
+        "support_agent": f"شما پشتیبان دلسوز و حرفه‌ای هوش مصنوعی ویرانگران و سامانه SmartStudentBot هستید. {lang_instruction}",
         "summarizer": f"متن ورودی را به صورت منسجم، مرتب و در قالب نکات کلیدی خلاصه نمایید. {lang_instruction}",
         "vision_analyzer": f"تصویر ارائه‌شده را با دقت بررسی نمایید و تمام نکات، اسناد، فرم‌های اداری یا متن‌های موجود در آن را استخراج و تحلیل کنید. {lang_instruction}",
         "audio_transcriber": f"پیام صوتی را پیاده‌سازی و پاسخ مرتبط ارائه دهید. {lang_instruction}",
@@ -523,9 +526,10 @@ class AIService:
         has_key = bool(atria_key)
         return {
             "status": "online" if has_key else "offline",
-            "provider": "Atria ASI",
+            "provider": "ویرانگران (Wirangar)",
             "model": self._get_atria_model(),
             "models_available": len(AVAILABLE_MODELS),
+            "active_models": len(AVAILABLE_MODELS),
             "healthy": has_key,
             "total_requests": self.stats.get("requests", 0),
             "atria_requests": self.stats.get("atria_requests", 0),
