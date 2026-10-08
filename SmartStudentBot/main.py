@@ -259,14 +259,32 @@ try:
 except ImportError as e:
     logger.error(f"Failed to import webapp_router: {e}")
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 async def root():
-    return {"name": "SmartStudentBot", "status": "running"}
+    """پاسخ سریع برای مانیتورینگ آپ‌تایم و UptimeRobot"""
+    return {
+        "name": "SmartStudentBot",
+        "team": "Wirangaran",
+        "status": "running",
+        "message": "Wirangar Bot is Alive! 🚀"
+    }
 
 
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 async def health_check():
-    return {"status": "healthy", "environment": settings.ENVIRONMENT}
+    return {
+        "status": "healthy",
+        "environment": settings.ENVIRONMENT,
+        "message": "Wirangar Bot is Alive!"
+    }
+
+
+@app.api_route("/ping", methods=["GET", "HEAD"])
+async def ping():
+    return {
+        "status": "pong",
+        "message": "Wirangar Bot is Alive!"
+    }
 
 
 @app.get("/ready")
