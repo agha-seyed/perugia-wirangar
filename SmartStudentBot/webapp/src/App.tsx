@@ -146,7 +146,7 @@ export default function App() {
                   }}
                 >
                   <ArrowBack sx={{ fontSize: 16 }} />
-                  بازگشت
+                  Back
                 </ButtonBase>
               )}
 
@@ -168,7 +168,7 @@ export default function App() {
                 }}
               >
                 <AutoAwesome sx={{ fontSize: 14 }} />
-                دستیار AI
+                AI Chat
               </ButtonBase>
 
               {/* Quick Weather Shortcut */}
@@ -189,7 +189,7 @@ export default function App() {
                 }}
               >
                 <WbSunny sx={{ fontSize: 14, color: '#FFD700' }} />
-                هوا
+                Weather
               </ButtonBase>
 
               {/* Telegram User Badge */}
@@ -268,27 +268,27 @@ export default function App() {
             }}
           >
             <BottomNavigationAction
-              label="خانه"
+              label="Home"
               icon={<Home />}
               sx={{ color: value === 0 ? '#FFD700' : '#94D2BD' }}
             />
             <BottomNavigationAction
-              label="ایزه (ISEE)"
+              label="ISEE"
               icon={<Calculate />}
               sx={{ color: value === 1 ? '#FFD700' : '#94D2BD' }}
             />
             <BottomNavigationAction
-              label="هم‌اتاقی"
+              label="Roommates"
               icon={<Person />}
               sx={{ color: value === 2 ? '#FFD700' : '#94D2BD' }}
             />
             <BottomNavigationAction
-              label="بازارچه"
+              label="Market"
               icon={<Storefront />}
               sx={{ color: value === 3 ? '#FFD700' : '#94D2BD' }}
             />
             <BottomNavigationAction
-              label="نقشه"
+              label="Map"
               icon={<Map />}
               sx={{ color: value === 4 ? '#FFD700' : '#94D2BD' }}
             />

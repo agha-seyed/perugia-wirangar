@@ -180,7 +180,7 @@ async def lifespan(app: FastAPI):
                 webapp_url = settings.WEBAPP_URL or "https://smartstudentbot-webapp.onrender.com"
                 await bot.set_chat_menu_button(
                     menu_button=MenuButtonWebApp(
-                        text="🚀 مینی‌اپ پروجا",
+                        text="🚀 Mini App",
                         web_app=WebAppInfo(url=webapp_url)
                     )
                 )

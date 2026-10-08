@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -94,6 +94,8 @@ export default function RoommateView() {
   const [newArea, setNewArea] = useState('Elce');
   const [newPrice, setNewPrice] = useState('');
   const [newType, setNewType] = useState('اتاق تک‌نفره (Singola)');
+  const [newContact, setNewContact] = useState('');
+  const [newDesc, setNewDesc] = useState('');
 
   useEffect(() => {
     fetch(`${API_BASE}/api/v1/webapp/roommates`)
