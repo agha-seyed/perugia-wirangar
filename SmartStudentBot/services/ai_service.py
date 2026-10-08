@@ -12,7 +12,9 @@ import google.generativeai as genai
 from config import settings, logger
 
 # Configure Gemini
-genai.configure(api_key=settings.GEMINI_API_KEY)
+api_key = settings.GEMINI_API_KEY or os.getenv("GOOGLE_API_KEY")
+if api_key:
+    genai.configure(api_key=api_key)
 
 # Data structures expected by ai_handler.py
 @dataclass
@@ -109,6 +111,13 @@ class AIService:
     ) -> AIResponse:
         start_time = time.time()
         
+        if not (settings.GEMINI_API_KEY or os.getenv("GOOGLE_API_KEY")):
+            return AIResponse(
+                text="سرویس هوش مصنوعی هنوز فعال نشده است (کلید GEMINI_API_KEY تنظیم نشده).",
+                is_fallback=True,
+                error="No API key configured"
+            )
+
         system_prompt = get_system_prompt(context, lang_code=lang_code)
         target_model = model if model in ["gemini-1.5-flash", "gemini-1.5-pro"] else "gemini-1.5-flash"
         
@@ -154,7 +163,13 @@ class AIService:
         user_id: int = 0
     ) -> AIResponse:
         start_time = time.time()
-        system_prompt = SYSTEM_PROMPTS["vision_analyzer"]
+        if not (settings.GEMINI_API_KEY or os.getenv("GOOGLE_API_KEY")):
+            return AIResponse(
+                text="تحلیل تصویر در دسترس نیست (کلید هوش مصنوعی تنظیم نشده).",
+                is_fallback=True,
+                error="No API key configured"
+            )
+        system_prompt = get_system_prompt("vision_analyzer")
         gen_model = self._get_gemini_model("gemini-1.5-flash", system_instruction=system_prompt)
         
         try:

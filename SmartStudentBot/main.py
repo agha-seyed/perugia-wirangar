@@ -136,61 +136,64 @@ async def lifespan(app: FastAPI):
     register_routers()
 
     # ─────────────────────────────────────────────────────
-    # Startup (شروع)
+    # Startup (اجرای در پس‌زمینه برای باز شدن سریع پورت در Render)
     # ─────────────────────────────────────────────────────
     
-    try:
-        # 1. اطلاعات ربات
-        bot_info = await bot.get_me()
-        logger.success(f"🤖 Bot: @{bot_info.username}")
-        
-        # 2. هوک راه‌اندازی هندلر هوش مصنوعی
+    async def init_background_services():
         try:
-            from handlers.ai_handler import on_startup as ai_startup
-            await ai_startup()
-            logger.info("✅ AI Handler startup hooks executed")
-        except ImportError:
-            logger.warning("⚠️ Could not import ai_handler hooks (module missing?)")
-        except Exception as e:
-            logger.error(f"❌ Error in AI startup hooks: {e}")
-
-        # 3. تنظیم Webhook یا Polling
-        if settings.IS_LOCAL:
-            await bot.delete_webhook(drop_pending_updates=True)
-            logger.info("🔄 Mode: Polling (Local)")
-        else:
-            webhook_url = f"{settings.BASE_URL}/webhook/{settings.BOT_ID}/{settings.WEBHOOK_SECRET}"
+            # 1. اطلاعات ربات
+            bot_info = await bot.get_me()
+            logger.success(f"🤖 Bot: @{bot_info.username}")
             
-            current = await bot.get_webhook_info()
-            if current.url != webhook_url:
-                await bot.set_webhook(
-                    url=webhook_url,
-                    allowed_updates=["message", "callback_query", "chat_member", "my_chat_member"],
-                    drop_pending_updates=True,
-                )
-                logger.success(f"🌐 Webhook set: {webhook_url}")
-            else:
-                logger.info("🌐 Webhook already configured")
-        
-        # 4. تنظیم دکمه منوی اختصاصی مینی‌اپ برای گوشی‌ها و تلگرام موبایل
-        try:
-            from aiogram.types import MenuButtonWebApp, WebAppInfo
-            webapp_url = settings.WEBAPP_URL or "https://smartstudentbot-webapp.onrender.com"
-            await bot.set_chat_menu_button(
-                menu_button=MenuButtonWebApp(
-                    text="🚀 مینی‌اپ پروجا",
-                    web_app=WebAppInfo(url=webapp_url)
-                )
-            )
-            logger.success(f"📱 Telegram Chat Menu Button configured: {webapp_url}")
-        except Exception as e:
-            logger.warning(f"⚠️ Could not set chat menu button: {e}")
+            # 2. هوک راه‌اندازی هندلر هوش مصنوعی
+            try:
+                from handlers.ai_handler import on_startup as ai_startup
+                await ai_startup()
+                logger.info("✅ AI Handler startup hooks executed")
+            except ImportError:
+                logger.warning("⚠️ Could not import ai_handler hooks (module missing?)")
+            except Exception as e:
+                logger.error(f"❌ Error in AI startup hooks: {e}")
 
-        logger.success("✅ Bot is ready!")
-        
-    except Exception as e:
-        logger.critical(f"❌ Startup failed: {e}")
-        raise
+            # 3. تنظیم Webhook یا Polling
+            if settings.IS_LOCAL:
+                await bot.delete_webhook(drop_pending_updates=True)
+                logger.info("🔄 Mode: Polling (Local)")
+            else:
+                webhook_url = f"{settings.BASE_URL}/webhook/{settings.BOT_ID}/{settings.WEBHOOK_SECRET}"
+                
+                current = await bot.get_webhook_info()
+                if current.url != webhook_url:
+                    await bot.set_webhook(
+                        url=webhook_url,
+                        allowed_updates=["message", "callback_query", "chat_member", "my_chat_member"],
+                        drop_pending_updates=True,
+                    )
+                    logger.success(f"🌐 Webhook set: {webhook_url}")
+                else:
+                    logger.info("🌐 Webhook already configured")
+            
+            # 4. تنظیم دکمه منوی اختصاصی مینی‌اپ برای گوشی‌ها و تلگرام موبایل
+            try:
+                from aiogram.types import MenuButtonWebApp, WebAppInfo
+                webapp_url = settings.WEBAPP_URL or "https://smartstudentbot-webapp.onrender.com"
+                await bot.set_chat_menu_button(
+                    menu_button=MenuButtonWebApp(
+                        text="🚀 مینی‌اپ پروجا",
+                        web_app=WebAppInfo(url=webapp_url)
+                    )
+                )
+                logger.success(f"📱 Telegram Chat Menu Button configured: {webapp_url}")
+            except Exception as e:
+                logger.warning(f"⚠️ Could not set chat menu button: {e}")
+
+            logger.success("✅ Bot is ready!")
+            
+        except Exception as e:
+            logger.error(f"❌ Background startup error: {e}")
+
+    # شروع تسک پس‌زمینه
+    asyncio.create_task(init_background_services())
     
     yield
     
@@ -350,9 +353,11 @@ if __name__ == "__main__":
             logger.info("👋 Stopped by user")
     else:
         import uvicorn
+        port = int(os.environ.get("PORT", getattr(settings, "PORT", 8000) or 8000))
+        logger.info(f"🚀 Starting Uvicorn server on 0.0.0.0:{port}")
         uvicorn.run(
             "main:app",
             host="0.0.0.0",
-            port=settings.PORT,
+            port=port,
             workers=1,
         )

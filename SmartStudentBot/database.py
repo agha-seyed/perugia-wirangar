@@ -41,16 +41,28 @@ class DatabaseManager:
             
         uri = settings.MONGO_URI
         try:
-            self.client = AsyncIOMotorClient(uri, serverSelectionTimeoutMS=2500)
+            self.client = AsyncIOMotorClient(uri, serverSelectionTimeoutMS=1500)
             await self.client.admin.command('ping')
-            self.db = self.client.get_database("smart_student_bot")
+            db_name = getattr(settings, "DB_NAME", None) or os.getenv("DB_NAME") or os.getenv("DB") or "smart_student_bot"
+            try:
+                self.db = self.client.get_default_database()
+            except Exception:
+                self.db = self.client.get_database(db_name)
+            if self.db is None:
+                self.db = self.client.get_database(db_name)
+            logger.info(f"✅ Successfully connected to MongoDB database: '{self.db.name}'")
         except Exception as e:
             if "mongo:" in uri:
                 fallback_uri = uri.replace("mongo:", "localhost:")
                 try:
-                    self.client = AsyncIOMotorClient(fallback_uri, serverSelectionTimeoutMS=2500)
+                    self.client = AsyncIOMotorClient(fallback_uri, serverSelectionTimeoutMS=1500)
                     await self.client.admin.command('ping')
-                    self.db = self.client.get_database("smart_student_bot")
+                    try:
+                        self.db = self.client.get_default_database()
+                    except Exception:
+                        self.db = self.client.get_database(db_name)
+                    if self.db is None:
+                        self.db = self.client.get_database(db_name)
                     logger.info(f"🔄 Connected to MongoDB via host fallback: {fallback_uri}")
                 except Exception:
                     logger.warning("⚠️ MongoDB is not accessible. Running with robust memory fallbacks.")

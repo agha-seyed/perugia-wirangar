@@ -14,7 +14,7 @@ echo Staging and Committing Perugia Bot to GitHub...
 echo ====================================================
 
 git add .
-git commit -m "feat: complete multilingual bot, webapp integration, and render blueprint"
+git commit -m "fix: resolve isee_handler syntax, optimize render startup, add mongodb and upstash redis support"
 
 echo.
 echo Pushing to origin main...

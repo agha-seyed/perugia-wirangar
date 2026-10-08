@@ -3839,16 +3839,19 @@ async def on_startup() -> None:
     
     # Warm-up اولیه
     if WARMUP_ENABLED and AI_SERVICE_AVAILABLE:
-        logger.info("🔥 Performing initial warmup...")
-        try:
-            success = await service_manager.warmup(force=True)
-            if success:
-                metrics.record_warmup()
-                logger.success("✅ Initial warmup successful")
-            else:
-                logger.warning("⚠️ Initial warmup failed")
-        except Exception as e:
-            logger.error(f"❌ Warmup error: {e}")
+        if not getattr(settings, "GEMINI_API_KEY", None) and not os.getenv("GOOGLE_API_KEY"):
+            logger.info("ℹ️ AI warmup skipped: GEMINI_API_KEY not configured")
+        else:
+            logger.info("🔥 Performing initial warmup...")
+            try:
+                success = await service_manager.warmup(force=True)
+                if success:
+                    metrics.record_warmup()
+                    logger.success("✅ Initial warmup successful")
+                else:
+                    logger.warning("⚠️ Initial warmup failed")
+            except Exception as e:
+                logger.error(f"❌ Warmup error: {e}")
     
     # بررسی سرویس
     if AI_SERVICE_AVAILABLE and ai_service:

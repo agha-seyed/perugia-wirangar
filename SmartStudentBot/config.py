@@ -18,6 +18,14 @@
 
 import os
 import sys
+
+if sys.platform.startswith("win"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 from typing import List, Optional
 from pathlib import Path
 from dotenv import load_dotenv
@@ -27,8 +35,8 @@ from loguru import logger
 # بارگذاری متغیرهای محیطی
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# بارگذاری .env با اولویت بالا (override=True)
-load_dotenv(override=True)
+# بارگذاری .env (متغیرهای سیستمی و Render اولویت دارند)
+load_dotenv(override=False)
 
 # مسیر پایه پروژه
 BASE_DIR = Path(__file__).parent
@@ -94,17 +102,62 @@ class Settings:
     # تنظیمات دیتابیس
     # ═══════════════════════════════════════════════════════════════════════════
     
-    # MongoDB Connection String (ضروری برای Render)
-    MONGO_URI: str = os.getenv(
-        "MONGO_URI",
-        "mongodb://localhost:27017/"
-    )
+    # MongoDB Connection String (پشتیبانی از MONGODB_URL, MONGO_URI, MONGODB_URI, MONGO_URL, DATABASE_URL)
+    @property
+    def MONGO_URI(self) -> str:
+        raw = (
+            os.getenv("MONGODB_URL")
+            or os.getenv("MONGO_URI")
+            or os.getenv("MONGODB_URI")
+            or os.getenv("MONGO_URL")
+            or os.getenv("DATABASE_URL")
+            or "mongodb://localhost:27017/"
+        ).strip().strip('"').strip("'")
+        return raw.strip()
+    
+    # نام دیتابیس (پشتیبانی از DB_NAME, DB, MONGO_DB, DATABASE_NAME)
+    @property
+    def DB_NAME(self) -> str:
+        return (
+            os.getenv("DB_NAME")
+            or os.getenv("DB")
+            or os.getenv("MONGO_DB")
+            or os.getenv("DATABASE_NAME")
+            or "smart_student_bot"
+        ).strip().strip('"').strip("'")
     
     # Gemini API Key (هوش مصنوعی رایگان گوگل)
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "").strip()
     
-    # Redis (برای کش و session)
-    REDIS_URL: str = os.getenv("REDIS_URL", "redis://redis:6379")
+    # Redis (پشتیبانی از REDIS_URL، فرمت Upstash REST و افزودن خودکار اسکیما)
+    @property
+    def REDIS_URL(self) -> str:
+        url = (
+            os.getenv("REDIS_URL")
+            or os.getenv("REDIS_URI")
+            or os.getenv("REDIS_INTERNAL_URL")
+            or os.getenv("REDIS_EXTERNAL_URL")
+            or ""
+        ).strip().strip('"').strip("'")
+        if not url:
+            return ""
+        
+        # اگر کاربر فرمت REST مربوط به Upstash را کپی کرده باشد، خودکار تبدیل به ردیس استاندارد می‌شود
+        if "upstash.io" in url and ("UPSTASH" in url or "https://" in url):
+            import re
+            host_match = re.search(r'(?:https?://)?([a-zA-Z0-9\.\-]+\.upstash\.io)', url)
+            token_match = re.search(r'TOKEN\s*=\s*["\']?([a-zA-Z0-9_\-]+)["\']?', url)
+            if host_match and token_match:
+                host = host_match.group(1)
+                token = token_match.group(1)
+                return f"rediss://default:{token}@{host}:6379"
+
+        if not any(url.startswith(scheme) for scheme in ("redis://", "rediss://", "unix://")):
+            if "upstash.io" in url:
+                url = f"rediss://{url}"
+            else:
+                url = f"redis://{url}"
+        return url
     
     # ═══════════════════════════════════════════════════════════════════════════
     # کلیدهای API - هوش مصنوعی
@@ -556,6 +609,13 @@ logger.info("   🔌 Services:")
 logger.info(f"      • Weather API: {'✅' if settings.OPENWEATHERMAP_API_KEY else '❌'}")
 logger.info(f"      • Exchange Rate API: {'✅' if settings.EXCHANGE_RATE_API_KEY else '❌'}")
 logger.info(f"      • Sentry: {'✅' if settings.SENTRY_DSN else '❌'}")
+logger.info("─" * 60)
+logger.info("   💾 Database Settings:")
+mongo_status = "✅ Remote/Cloud" if "localhost" not in settings.MONGO_URI and settings.MONGO_URI else "⚠️ Localhost/Fallback"
+logger.info(f"      • MongoDB: {mongo_status}")
+logger.info(f"      • Database Name: {settings.DB_NAME}")
+redis_status = "✅ Configured" if settings.REDIS_URL and "localhost" not in settings.REDIS_URL else ("⚠️ Localhost" if settings.REDIS_URL else "❌ Not set")
+logger.info(f"      • Redis: {redis_status}")
 logger.info("═" * 60)
 
 

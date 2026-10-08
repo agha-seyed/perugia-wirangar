@@ -4303,17 +4303,6 @@ async def send_final_report(
 📊 میانه: {IRANIAN_STATS['median']:,}€
 
 {'━' * 28}
-💶 <b>نرخ تبدیل:</b> {inputs.eur_rate:,} تومان = 1€
-📅 <b>تاریخ:</b> {datetime.now().strftime('%Y/%m/%d %H:%M')}
-⚠️ <i>این محاسبه تخمینی است. ISEE رسمی توسط CAF در ایتالیا صادر می‌شود.</i>
-"""
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="📄 دریافت کارنامه رسمی PDF", callback_data="isee_get_pdf")],
-            [InlineKeyboardButton(text="🔄 محاسبه مجدد", callback_data="isee_mode_full"), InlineKeyboardButton(text="💡 راهکار کاهش", callback_data="isee_tips")],
-            [InlineKeyboardButton(text="🎯 محاسبه‌گر معکوس", callback_data="isee_reverse_intro")],
-            [InlineKeyboardButton(text="📜 تاریخچه", callback_data="isee_history")],
-            [InlineKeyboardButton(text="🏠 منوی اصلی", callback_data="main_menu")],
-        ])
 
 🔢 <b>جزئیات محاسبه:</b>
 
@@ -4346,7 +4335,6 @@ ISEE = {result.ise:,.0f} ÷ {result.scale} = <b>{result.isee:,.0f}€</b>
 
 💶 <b>نرخ تبدیل:</b> {inputs.eur_rate:,} تومان = 1€
 📅 <b>تاریخ:</b> {datetime.now().strftime('%Y/%m/%d %H:%M')}
-
 """
     
     # ═══ بخش ۶: توصیه‌ها ═══
